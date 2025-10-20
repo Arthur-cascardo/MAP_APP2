@@ -13,11 +13,34 @@
             "popup_text": "New Marker (3)",
             "tooltip_text": null,
             "color": "#fd0602"
+        },
+        "9b3047dd-2775-43eb-b6db-b8d01a7e95c9": {
+            "lat": -4.653079918274038,
+            "lon": -55.37109375000001,
+            "popup_text": "New Marker (16)",
+            "tooltip_text": null,
+            "color": "#efbe10"
+        },
+        "b11c871b-e52b-405c-a2b8-0b92f691d445": {
+            "lat": -8.754794702435618,
+            "lon": -50.71289062500001,
+            "popup_text": "New Marker (12)",
+            "tooltip_text": null,
+            "color": "#ff0000"
+        },
+        "39d20fd8-cfa9-4a3b-a59d-82983fcc2817": {
+            "lat": -9.015302333420586,
+            "lon": -49.04296875000001,
+            "popup_text": "New Marker (9)",
+            "tooltip_text": null,
+            "color": "#00ff00"
         }
     },
     "paths": {},
     "memories": {
         "49b2c704-7a51-424a-bd25-0d9d0e806af2": "yfgf",
-        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": "hgvjhvjhv"
+        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": "hgvjhvjhv",
+        "39d20fd8-cfa9-4a3b-a59d-82983fcc2817": "cbxbcvb",
+        "b11c871b-e52b-405c-a2b8-0b92f691d445": "dgdfgdfgdfg"
     }
 }

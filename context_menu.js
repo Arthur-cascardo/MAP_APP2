@@ -835,30 +835,113 @@ window.addMemoryPrompt = function(markerId) {
 window.viewMemory = function(markerId) {
     console.log('Viewing memory for marker:', markerId);
 
-    fetch('/get_memory/' + markerId)
+    // Step 1: PAUSE Arduino communication first
+    fetch('/api/pause_arduino', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: true })
+    })
+    .then(response => response.json())
+    .then(pauseData => {
+        console.log('Arduino paused:', pauseData);
+
+        // Step 2: Trigger the memory effect (this sends the trigger packet to Arduino)
+        return fetch('/get_memory/' + markerId);
+    })
     .then(response => response.json())
     .then(data => {
         if (data.status === 'success') {
             var memory = data.memory;
 
-            // Display the memory to the user
-            if (memory.startsWith('http')) {
-                window.open(memory, '_blank');
-            } else {
-                alert('Memory: ' + memory);
-            }
+            // Step 3: Show dialog immediately
+            // LEDs will stay lit in the marker color until user clicks OK
+            setTimeout(function() {
+                showMemoryDialog(memory, markerId);
+            }, 100);
 
-            // Log that memory view was triggered (Arduino communication happens server-side)
-            console.log('Memory view triggered for marker ' + markerId + ' - Arduino trigger sent to server');
+            console.log('Memory trigger sent - wave effect starting, dialog will show after effect');
 
         } else {
+            resumeArduino();
             alert('No memory found');
         }
     })
     .catch(error => {
         console.error('Error getting memory:', error);
+        resumeArduino();
         alert('Failed to get memory');
     });
+};
+
+function resumeArduino() {
+    console.log('Resuming Arduino communication...');
+    fetch('/api/pause_arduino', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: false })
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log('Arduino resumed:', data);
+    })
+    .catch(error => {
+        console.error('Error resuming Arduino:', error);
+    });
+}
+
+// New function to show memory in a custom dialog
+function showMemoryDialog(memory, markerId) {
+    var existing = document.getElementById('memoryDialog');
+    if (existing) document.body.removeChild(existing);
+
+    var isUrl = memory.startsWith('http://') || memory.startsWith('https://');
+
+    var dialog = document.createElement('div');
+    dialog.id = 'memoryDialog';
+    dialog.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 600px; width: 90%; font-family: Arial, sans-serif;">
+                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">&#128205 Memory</h3>
+
+                ${isUrl ? `
+                    <div style="margin-bottom: 20px; text-align: center;">
+                        <p style="color: #666; margin-bottom: 15px;">This memory contains a link:</p>
+                        <a href="${memory}" target="_blank" style="color: #007bff; word-break: break-all; font-size: 14px;">${memory}</a>
+                    </div>
+                    <div style="text-align: center;">
+                        <button onclick="window.open('${memory}', '_blank')" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px;">
+                            Open Link
+                        </button>
+                        <button onclick="closeMemoryDialog()" style="padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                            OK
+                        </button>
+                    </div>
+                ` : `
+                    <div style="margin-bottom: 20px;">
+                        <p style="color: #333; line-height: 1.6; white-space: pre-wrap; max-height: 400px; overflow-y: auto; padding: 15px; background: #f8f9fa; border-radius: 8px;">${memory}</p>
+                    </div>
+                    <div style="text-align: center;">
+                        <button onclick="closeMemoryDialog()" style="padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
+                            OK
+                        </button>
+                    </div>
+                `}
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+}
+
+// Function to close memory dialog and resume Arduino
+window.closeMemoryDialog = function() {
+    var dialog = document.getElementById('memoryDialog');
+    if (dialog) {
+        document.body.removeChild(dialog);
+    }
+
+    // RESUME Arduino communication when user closes dialog
+    resumeArduino();
 };
 
 // ======================== MAP BOUNDS & TRACKING ========================

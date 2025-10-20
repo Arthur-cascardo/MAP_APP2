@@ -225,7 +225,7 @@ class Arduino:
         return None
 
     def run_communication_to_arduino(self):
-        """Main communication loop"""
+        """Main communication loop with pause support"""
         if not self.open_serial_connection():
             self.logger.error("Cannot start communication - serial connection failed")
             return
@@ -243,7 +243,7 @@ class Arduino:
                 if loop_count % 10 == 0:
                     self.load_marker_colors('server_storage.json')
 
-                # Priority 1: Check for memory triggers
+                # Priority 1: Check for memory triggers FIRST (even if paused)
                 memory_trigger = self.fetch_memory_trigger()
                 if memory_trigger:
                     packet = self.create_memory_packet(memory_trigger)
@@ -264,7 +264,14 @@ class Arduino:
                             time.sleep(0.05)
                     continue
 
-                # Priority 2: Send regular marker data
+                # Check if Arduino communication is paused (AFTER memory trigger check)
+                from __main__ import arduino_paused
+
+                if arduino_paused:
+                    self.logger.info("Arduino communication paused - waiting for resume...")
+                    continue  # Skip regular packets
+
+                # Priority 2: Send regular marker data (only if not paused)
                 markers = self.fetch_visible_markers()
                 packet = self.create_regular_packet(markers)
 

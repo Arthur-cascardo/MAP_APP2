@@ -19,6 +19,7 @@ import requests
 import folium
 import numpy as np
 
+arduino_paused = False
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
@@ -356,9 +357,35 @@ def index():
 
     return map_html
 
+@app.route('/api/pause_arduino', methods=['POST'])
+def api_pause_arduino():
+    """
+    API endpoint to pause Arduino communication during memory view.
+    """
+    try:
+        global arduino_paused
+        data = request.json
+        paused = data.get('paused', False)
 
-# Add this new route to your Flask application (app.py)
-# Place it with your other API routes
+        arduino_paused = paused
+
+        if paused:
+            print("=" * 50)
+            print("ARDUINO COMMUNICATION PAUSED")
+            print("=" * 50)
+        else:
+            print("=" * 50)
+            print("ARDUINO COMMUNICATION RESUMED")
+            print("=" * 50)
+
+        return jsonify({
+            "status": "success",
+            "arduino_paused": arduino_paused
+        })
+
+    except Exception as e:
+        print(f"Error setting Arduino pause state: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/cleanup_leds', methods=['POST'])
 def api_cleanup_leds():
