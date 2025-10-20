@@ -1,5 +1,23 @@
 {
-    "markers": {},
+    "markers": {
+        "49b2c704-7a51-424a-bd25-0d9d0e806af2": {
+            "lat": -9.654907854199012,
+            "lon": -36.57348632812501,
+            "popup_text": "G (1)",
+            "tooltip_text": null,
+            "color": "#66ccff"
+        },
+        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": {
+            "lat": -16.726961081010632,
+            "lon": -45.76904296875001,
+            "popup_text": "New Marker (3)",
+            "tooltip_text": null,
+            "color": "#fd0602"
+        }
+    },
     "paths": {},
-    "memories": {}
+    "memories": {
+        "49b2c704-7a51-424a-bd25-0d9d0e806af2": "yfgf",
+        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": "hgvjhvjhv"
+    }
 }

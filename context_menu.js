@@ -944,6 +944,96 @@ window.getVisibleMarkers = function() {
     }
 };
 
+// Add this code to your context_menu.js file
+// Place it near the end, before the initialization section
+
+// Add this code to your context_menu.js file
+// Place it near the end, before the initialization section
+
+// Add this code to your context_menu.js file
+// Place it near the end, before the initialization section
+
+// ======================== WINDOW CLEANUP (LED OFF) ========================
+var tabIsVisible = true; // Track tab visibility state
+
+function cleanupLEDs() {
+    console.log('Turning off LEDs...');
+
+    // Send an empty markers list to turn off LEDs
+    fetch('/visible_markers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visible_markers: [] }),
+        keepalive: true
+    }).then(function() {
+        console.log('Empty markers list sent - LEDs should turn off');
+    }).catch(function(error) {
+        console.error('Error sending empty markers:', error);
+    });
+}
+
+// Override the updateVisibleMarkers function to check tab visibility
+var originalUpdateVisibleMarkers = window.updateVisibleMarkers;
+if (typeof originalUpdateVisibleMarkers === 'function') {
+    window.updateVisibleMarkers = function() {
+        if (tabIsVisible) {
+            originalUpdateVisibleMarkers();
+        } else {
+            console.log('Tab hidden - skipping markers update');
+        }
+    };
+    console.log('updateVisibleMarkers function wrapped with visibility check');
+}
+
+// Listen for window close event
+window.addEventListener('beforeunload', function(event) {
+    console.log('Window closing');
+    tabIsVisible = false;
+    // Use the cleanup endpoint for permanent shutdown
+    if (navigator.sendBeacon) {
+        var blob = new Blob([JSON.stringify({})], { type: 'application/json' });
+        navigator.sendBeacon('/api/cleanup_leds', blob);
+    } else {
+        fetch('/api/cleanup_leds', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+            keepalive: true
+        });
+    }
+});
+
+// Listen for tab visibility changes (switching tabs, minimizing window)
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') {
+        console.log('Tab hidden - turning off LEDs and pausing updates');
+        tabIsVisible = false;
+        cleanupLEDs();
+    } else {
+        console.log('Tab visible - resuming updates and restoring LEDs');
+        tabIsVisible = true;
+        // Immediately send current visible markers
+        setTimeout(function() {
+            if (typeof updateVisibleMarkers === 'function') {
+                updateVisibleMarkers();
+                console.log('Visible markers update triggered');
+            }
+        }, 200);
+    }
+});
+
+// Listen for page hide (backup for mobile/older browsers)
+window.addEventListener('pagehide', function(event) {
+    console.log('Page hide');
+    tabIsVisible = false;
+    if (navigator.sendBeacon) {
+        var blob = new Blob([JSON.stringify({})], { type: 'application/json' });
+        navigator.sendBeacon('/api/cleanup_leds', blob);
+    }
+});
+
+console.log('LED cleanup handlers registered (window close + tab switching with pause)');
+
 // ======================== INITIALIZATION ========================
 function initializeScript() {
     console.log('Initializing script...');

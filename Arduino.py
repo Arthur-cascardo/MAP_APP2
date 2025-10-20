@@ -10,12 +10,6 @@ class Arduino:
     def __init__(self, url, memory_url, port, baudrate):
         """
         Initialize Arduino communication class.
-
-        Args:
-            url (str): URL for fetching visible markers
-            memory_url (str): URL for fetching memory triggers
-            port (str): Serial port (e.g., 'COM5', '/dev/ttyUSB0')
-            baudrate (int): Serial communication speed
         """
         self.url = url
         self.memory_url = memory_url
@@ -29,14 +23,16 @@ class Arduino:
         self.logger = logging.getLogger(__name__)
 
         self.logger.info(f"Arduino class initialized - Port: {port}, Baudrate: {baudrate}")
-    ##TODO
+
+        # Load marker colors on initialization
+        self.load_marker_colors('server_storage.json')
+
     def load_marker_colors(self, markers_file_path):
         """Load marker colors from local JSON file"""
         try:
             with open(markers_file_path, 'r') as file:
                 data = json.load(file)
 
-            # Pattern to extract number from popup_text like "New Marker (1)"
             pattern = r'\((\d+)\)'
             colors_loaded = 0
 
@@ -44,15 +40,20 @@ class Arduino:
                 popup_text = marker_data.get('popup_text', '')
                 color_hex = marker_data.get('color', '#FFFFFF')
 
-                # Extract marker number from popup text
                 match = re.search(pattern, popup_text)
                 if match:
                     marker_number = int(match.group(1))
                     rgb_color = self.hex_to_rgb(color_hex)
                     self.marker_colors[marker_number] = rgb_color
                     colors_loaded += 1
+                    self.logger.info(f"  Marker {marker_number}: {color_hex} -> RGB{rgb_color}")
 
             self.logger.info(f"Loaded {colors_loaded} marker colors from {markers_file_path}")
+
+            if self.marker_colors:
+                self.logger.info(f"Marker color mapping: {self.marker_colors}")
+            else:
+                self.logger.warning("No marker colors loaded!")
 
         except FileNotFoundError:
             self.logger.error(f"Marker file not found: {markers_file_path}")
@@ -71,7 +72,6 @@ class Arduino:
             response.raise_for_status()
             result = response.json()
 
-            # Extract marker numbers from names using regex
             numbers = []
             pattern = r'\((\d+)\)'
 
@@ -115,11 +115,12 @@ class Arduino:
             return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
         except ValueError:
             self.logger.warning(f"Invalid hex color: {hex_color}")
-            return (255, 255, 255)  # Default to white
+            return (255, 255, 255)
 
     def get_marker_color(self, marker_id):
         """Get RGB color for a specific marker ID from loaded data"""
-        return self.marker_colors.get(marker_id, (255, 255, 255))
+        color = self.marker_colors.get(marker_id, (255, 255, 255))
+        return color
 
     def create_position_mask(self, marker_list):
         """Generate 16-bit position mask from marker list"""
@@ -138,7 +139,6 @@ class Arduino:
         Format: [position_high][position_low][RGB_data_48_bytes]
         """
         try:
-            # Create position mask
             position_mask = self.create_position_mask(marker_list)
             position_bytes = position_mask.to_bytes(2, byteorder="big")
 
@@ -148,28 +148,23 @@ class Arduino:
                 if led_id in marker_list:
                     r, g, b = self.get_marker_color(led_id)
                 else:
-                    r, g, b = 0, 0, 0  # Off
-                color_data.extend([r, g, b])
+                    r, g, b = 0, 0, 0
+                color_data.extend([r, b, g])
 
-            # Combine into 50-byte packet
             packet = position_bytes + bytes(color_data)
             return packet
 
         except Exception as e:
             self.logger.error(f"Error creating regular packet: {e}")
-            return b'\x00' * 50  # Return empty packet
+            return b'\x00' * 50
 
     def create_memory_packet(self, trigger_data):
-        """
-        Convert memory trigger data to bytes packet.
-        The trigger_data should already be the 50-byte array from server.
-        """
+        """Convert memory trigger data to bytes packet."""
         try:
             if not trigger_data or len(trigger_data) != 50:
                 self.logger.error(f"Invalid trigger data length: {len(trigger_data) if trigger_data else 0}")
                 return None
 
-            # Convert to bytes if needed
             if isinstance(trigger_data, list):
                 return bytes(trigger_data)
             return trigger_data
@@ -210,6 +205,7 @@ class Arduino:
                     return False
 
             self.serial_connection.write(packet)
+            self.serial_connection.flush()
             return True
 
         except serial.SerialException as e:
@@ -234,22 +230,38 @@ class Arduino:
             self.logger.error("Cannot start communication - serial connection failed")
             return
 
+        # Load colors once at start
+        self.load_marker_colors('server_storage.json')
+
         try:
+            loop_count = 0
             while True:
-                time.sleep(0.3)  # Communication interval
+                time.sleep(0.3)
+                loop_count += 1
+
+                # Reload colors every 10 loops (every 3 seconds)
+                if loop_count % 10 == 0:
+                    self.load_marker_colors('server_storage.json')
 
                 # Priority 1: Check for memory triggers
                 memory_trigger = self.fetch_memory_trigger()
                 if memory_trigger:
                     packet = self.create_memory_packet(memory_trigger)
                     if packet and self.send_packet(packet):
-                        # Extract info for logging
                         header = packet[:4].hex()
                         marker_num = packet[4]
                         r, g, b = packet[5], packet[6], packet[7]
 
                         self.logger.info(f"MEMORY TRIGGER SENT - Header: {header}, "
                                          f"Marker: {marker_num}, RGB: ({r},{g},{b})")
+
+                        # Read Arduino response
+                        time.sleep(0.1)
+                        for _ in range(10):
+                            response = self.read_arduino_response()
+                            if response is None:
+                                break
+                            time.sleep(0.05)
                     continue
 
                 # Priority 2: Send regular marker data
@@ -257,37 +269,24 @@ class Arduino:
                 packet = self.create_regular_packet(markers)
 
                 if self.send_packet(packet):
-                    # Extract position for logging
                     position_mask = int.from_bytes(packet[:2], byteorder="big")
                     active_count = bin(position_mask).count('1')
 
-                    self.logger.info(f"REGULAR DATA SENT - Active LEDs: {active_count}, "
-                                     f"Position: 0b{position_mask:016b}")
+                    if active_count > 0:
+                        self.logger.info(f"REGULAR DATA SENT - Active LEDs: {active_count}, "
+                                         f"Markers: {markers}")
 
                 # Check for Arduino responses
                 self.read_arduino_response()
-
-                # Reload marker colors periodically
-                self.reload_marker_colors('server_storage.json')
 
         except KeyboardInterrupt:
             self.logger.info("Communication stopped by user")
         except Exception as e:
             self.logger.error(f"Communication error: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self.close_serial_connection()
-
-    def reload_marker_colors(self, markers_file_path):
-        """Reload marker colors from file"""
-        self.load_marker_colors(markers_file_path)
-
-    def set_marker_color_override(self, marker_id, rgb_tuple):
-        """Override a marker color temporarily"""
-        if isinstance(rgb_tuple, tuple) and len(rgb_tuple) == 3:
-            self.marker_colors[marker_id] = rgb_tuple
-            self.logger.info(f"Color override set for marker {marker_id}: {rgb_tuple}")
-        else:
-            self.logger.error(f"Invalid RGB tuple for marker {marker_id}: {rgb_tuple}")
 
     def get_status(self):
         """Get current status of the Arduino connection"""
@@ -296,6 +295,7 @@ class Arduino:
             'port': self.port,
             'baudrate': self.baudrate,
             'loaded_colors': len(self.marker_colors),
+            'marker_colors': self.marker_colors,
             'urls': {
                 'markers': self.url,
                 'memory': self.memory_url

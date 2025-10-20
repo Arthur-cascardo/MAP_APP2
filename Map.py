@@ -102,9 +102,8 @@ def hex_color_to_rgb(hex_color):
 def create_memory_view_array(marker_id, marker_color):
     """
     Create a unique 50-byte array for memory view trigger.
-    Format: [4-byte header][MARKER_NUMBER][R][G][B][43 padding bytes]
+    Format: [4-byte header][MARKER_NUMBER][B][R][G][43 padding bytes]
     """
-    # 4-byte header that's very unlikely to occur in regular data
     MEMORY_HEADER = [0xFF, 0xFE, 0xFD, 0xFC]
 
     marker_number = get_marker_number_from_id(marker_id)
@@ -112,18 +111,23 @@ def create_memory_view_array(marker_id, marker_color):
 
     # Create 50-byte array
     memory_array = [0] * 50
-    memory_array[0] = MEMORY_HEADER[0]  # Header byte 1
-    memory_array[1] = MEMORY_HEADER[1]  # Header byte 2
-    memory_array[2] = MEMORY_HEADER[2]  # Header byte 3
-    memory_array[3] = MEMORY_HEADER[3]  # Header byte 4
-    memory_array[4] = marker_number  # Marker number (1-16)
-    memory_array[5] = r  # Red component
-    memory_array[6] = g  # Green component
-    memory_array[7] = b  # Blue component
-    # Remaining bytes stay as 0 (padding)
+    memory_array[0] = MEMORY_HEADER[0]
+    memory_array[1] = MEMORY_HEADER[1]
+    memory_array[2] = MEMORY_HEADER[2]
+    memory_array[3] = MEMORY_HEADER[3]
+    memory_array[4] = marker_number  # Index 4
+    memory_array[5] = r              # Index 5 - RED (was R)
+    memory_array[6] = b              # Index 6 - BLUE (was G)
+    memory_array[7] = g              # Index 7 - GREEN (was B)
+
+    # DEBUG LOGGING
+    print(f"Created memory array:")
+    print(f"  Header: {memory_array[0]:02X} {memory_array[1]:02X} {memory_array[2]:02X} {memory_array[3]:02X}")
+    print(f"  Marker Number: {memory_array[4]}")
+    print(f"  RGB: ({r}, {g}, {b}) -> RBG: ({memory_array[5]}, {memory_array[6]}, {memory_array[7]})")
+    print(f"  Full array first 10 bytes: {memory_array[:10]}")
 
     return memory_array
-
 
 # Cache for colored icons
 _icon_cache = {}
@@ -177,7 +181,7 @@ def get_colored_marker_icon(color):
 def com_with_arduino():
     arduino_com = Arduino(url='http://127.0.0.1:5000/api/visible_markers',
                           memory_url='http://127.0.0.1:5000/api/memory_trigger',
-                          port='COM5',
+                          port='COM6',
                           baudrate=9600
                           )
     while True:
@@ -353,6 +357,37 @@ def index():
     return map_html
 
 
+# Add this new route to your Flask application (app.py)
+# Place it with your other API routes
+
+@app.route('/api/cleanup_leds', methods=['POST'])
+def api_cleanup_leds():
+    """
+    API endpoint to turn off all LEDs when the window is closed.
+    Simply clears the visible markers list.
+    """
+    try:
+        print("=" * 50)
+        print("CLEANUP ENDPOINT CALLED - Window closing!")
+        print("=" * 50)
+
+        global current_visible_markers
+
+        # Clear the visible markers list - this will cause Arduino to send
+        # a regular packet with all LEDs off (0,0,0)
+        print(f"Clearing visible markers list (was: {current_visible_markers})")
+        current_visible_markers = []
+        print("Visible markers cleared - LEDs will turn off")
+
+        return jsonify({
+            "status": "success",
+            "message": "Visible markers cleared - LEDs turning off"
+        })
+
+    except Exception as e:
+        print(f"Error sending LED cleanup signal: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # New endpoint to receive visible markers data
 @app.route('/visible_markers', methods=['POST'])
 def visible_markers_route():
@@ -420,12 +455,13 @@ def api_memory_trigger():
             trigger_data = memory_view_trigger.copy()
             memory_view_trigger = None  # Clear after reading
 
+            # FIXED INDICES - marker at [4], RGB at [5,6,7]
             return jsonify({
                 "status": "success",
                 "has_trigger": True,
                 "trigger_data": trigger_data,
-                "marker_number": trigger_data[1],
-                "color_rgb": [trigger_data[2], trigger_data[3], trigger_data[4]]
+                "marker_number": trigger_data[4],  # FIXED: was trigger_data[1]
+                "color_rgb": [trigger_data[5], trigger_data[6], trigger_data[7]]  # FIXED: was [2,3,4]
             })
         else:
             return jsonify({
@@ -437,7 +473,6 @@ def api_memory_trigger():
     except Exception as e:
         print(f"Error getting memory trigger via API: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 @app.route('/add_marker', methods=['POST'])
 def add_marker_route():
