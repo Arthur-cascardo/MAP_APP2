@@ -242,7 +242,7 @@ function showColorPicker(callback) {
     picker.innerHTML = `
         <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000;" onclick="closeColorPicker()">
             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); min-width: 450px; font-family: Arial, sans-serif;" onclick="event.stopPropagation()">
-                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">Choose Marker Color</h3>
+                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">Escolha a cor</h3>
                 <!-- Color Wheel Section -->
                 <div style="text-align: center; margin-bottom: 20px;">
                     <canvas id="addColorWheel" width="150" height="150" style="cursor: crosshair; border: 2px solid #ddd; border-radius: 50%; margin-bottom: 15px;"></canvas>
@@ -251,7 +251,7 @@ function showColorPicker(callback) {
                 <!-- Selected Color Display -->
                 <div style="text-align: center; margin-bottom: 20px;">
                     <div style="display: inline-flex; align-items: center; gap: 10px;">
-                        <span style="color: #666;">Selected:</span>
+                        <span style="color: #666;">Selecionada:</span>
                         <div id="addSelectedColorBox" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 6px; background: ${getColorHex('blue')};"></div>
                         <input type="text" id="addColorHexInput" value="${getColorHex('blue')}" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; width: 70px; font-size: 12px;" readonly>
                     </div>
@@ -260,7 +260,7 @@ function showColorPicker(callback) {
                 <!-- Color Palette -->
                 <div style="margin-bottom: 20px;">
                     <div style="text-align: center; margin-bottom: 8px;">
-                        <span style="color: #666; font-size: 12px;">Color Palette:</span>
+                        <span style="color: #666; font-size: 12px;">Paleta de cores:</span>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;">
                         ${colorPalette.slice(0, 16).map(color => `
@@ -271,8 +271,8 @@ function showColorPicker(callback) {
 
                 <!-- Action Buttons -->
                 <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
-                    <button onclick="confirmColorSelection()" style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Use This Color</button>
-                    <button onclick="closeColorPicker()" style="padding: 12px 20px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer;">Cancel</button>
+                    <button onclick="confirmColorSelection()" style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Usar essa cor</button>
+                    <button onclick="closeColorPicker()" style="padding: 12px 20px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer;">Cancelar</button>
                 </div>
             </div>
         </div>
@@ -341,17 +341,32 @@ function updateAddSelectedColor(color) {
 }
 
 window.confirmColorSelection = function() {
+    console.log('=== confirmColorSelection called ===');
+
     // Use the hex value directly instead of converting to predefined color
     var selectedColor = window.selectedAddColorHex || '#0066cc';
-    closeColorPicker();
+    console.log('Selected color:', selectedColor);
 
-    if (window.colorPickerCallback) {
-        window.colorPickerCallback(selectedColor);
-    } else if (rightClickCoords) {
-        var text = prompt("Enter marker description:", "New Marker");
-        if (text && text.trim()) {
-            addMarker(rightClickCoords.lat, rightClickCoords.lng, text.trim(), selectedColor);
+    // IMPORTANT: Store callback before closing picker (which clears it)
+    var callback = window.colorPickerCallback;
+    var coords = rightClickCoords;
+
+    closeColorPicker(); // This clears window.colorPickerCallback!
+    console.log('Color picker closed');
+
+    if (callback) {
+        console.log('Calling saved callback with color:', selectedColor);
+        try {
+            callback(selectedColor);
+            console.log('Callback executed successfully');
+        } catch (error) {
+            console.error('Error in callback:', error);
         }
+    } else if (coords) {
+        console.log('No callback, using rightClickCoords');
+        showMarkerDescriptionDialog(coords.lat, coords.lng, selectedColor);
+    } else {
+        console.error('No callback or coordinates available!');
     }
 };
 
@@ -381,10 +396,10 @@ function setupContextMenu() {
         contextMenuElement.innerHTML = `
             <div id="contextMenu" style="position: absolute; background: white; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); padding: 4px 0; z-index: 9999; display: none; min-width: 160px; font-family: Arial, sans-serif;">
                 <div onclick="addMarkerWithColorPicker()" style="padding: 10px 16px; cursor: pointer; color: #333; font-size: 14px; border-bottom: 1px solid #f0f0f0;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">
-                    &#128205; Add Marker Here
+                    &#128205; Adicionar viagem aqui
                 </div>
                 <div onclick="hideContextMenu()" style="padding: 10px 16px; cursor: pointer; color: #333; font-size: 14px;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor='white'">
-                    &#10060; Cancel
+                    &#10060; Cancelar
                 </div>
             </div>
         `;
@@ -450,12 +465,105 @@ window.addMarkerWithColorPicker = function() {
     }
 
     showColorPicker(function(color) {
-        var text = prompt("Enter marker description:", "New Marker");
-        if (text && text.trim()) {
-            console.log('Adding marker at:', rightClickCoords, 'with color:', color);
-            addMarker(rightClickCoords.lat, rightClickCoords.lng, text.trim(), color);
-        }
+        showMarkerDescriptionDialog(rightClickCoords.lat, rightClickCoords.lng, color);
     });
+};
+
+// New function to show marker description dialog
+function showMarkerDescriptionDialog(lat, lng, color, defaultText) {
+    var existing = document.getElementById('markerDescDialog');
+    if (existing) document.body.removeChild(existing);
+
+    // Use defaultText if provided, otherwise empty
+    var inputValue = defaultText ? defaultText.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+    var placeholderText = defaultText ? '' : 'Ex: Viagem para Paris, Final de semana na praia...';
+
+    var dialog = document.createElement('div');
+    dialog.id = 'markerDescDialog';
+    dialog.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;" id="markerDescBackdrop">
+            <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 500px; width: 90%; font-family: Arial, sans-serif;" onclick="event.stopPropagation()">
+                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">&#128205; Nova Viagem</h3>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #555; font-weight: bold;">Descrição da viagem:</label>
+                    <input type="text" id="markerDescInput" value="${inputValue}" placeholder="${placeholderText}" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; font-family: Arial, sans-serif;">
+                </div>
+
+                <div style="margin-bottom: 25px; text-align: center;">
+                    <div style="display: inline-flex; align-items: center; gap: 10px; background: #f8f9fa; padding: 10px 15px; border-radius: 8px;">
+                        <span style="color: #666; font-size: 13px;">Cor escolhida:</span>
+                        <div style="width: 24px; height: 24px; border: 2px solid #333; border-radius: 6px; background: ${color};"></div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
+                    <button id="confirmMarkerBtn" style="padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;">Adicionar Viagem</button>
+                    <button id="cancelMarkerBtn" style="padding: 12px 24px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer; font-size: 14px;">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    // Store the values for the button click
+    window.pendingMarkerData = { lat: lat, lng: lng, color: color };
+
+    // Add event listeners
+    document.getElementById('markerDescBackdrop').addEventListener('click', closeMarkerDescDialog);
+    document.getElementById('cancelMarkerBtn').addEventListener('click', closeMarkerDescDialog);
+    document.getElementById('confirmMarkerBtn').addEventListener('click', function() {
+        var input = document.getElementById('markerDescInput');
+        var text = input ? input.value.trim() : '';
+
+        if (!text) {
+            alert('Por favor, insira uma descrição para a viagem');
+            if (input) input.focus();
+            return;
+        }
+
+        console.log('Adding marker at:', window.pendingMarkerData.lat, window.pendingMarkerData.lng, 'with color:', window.pendingMarkerData.color);
+        addMarker(window.pendingMarkerData.lat, window.pendingMarkerData.lng, text, window.pendingMarkerData.color);
+        closeMarkerDescDialog();
+    });
+
+    setTimeout(() => {
+        var input = document.getElementById('markerDescInput');
+        if (input) {
+            input.focus();
+            if (defaultText) {
+                input.select();
+            }
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    document.getElementById('confirmMarkerBtn').click();
+                }
+            });
+        }
+    }, 100);
+}
+
+window.confirmMarkerDescription = function(lat, lng, color) {
+    console.log('confirmMarkerDescription called with:', { lat, lng, color });
+
+    var input = document.getElementById('markerDescInput');
+    var text = input ? input.value.trim() : '';
+
+    if (!text) {
+        alert('Por favor, insira uma descrição para a viagem');
+        if (input) input.focus();
+        return;
+    }
+
+    console.log('Adding marker at:', lat, lng, 'with color:', color);
+    addMarker(lat, lng, text, color);
+    closeMarkerDescDialog();
+};
+
+window.closeMarkerDescDialog = function() {
+    var dialog = document.getElementById('markerDescDialog');
+    if (dialog) document.body.removeChild(dialog);
 };
 
 // ======================== MARKER OPERATIONS ========================
@@ -525,15 +633,15 @@ function showEditDialog(markerId, currentText, currentColor) {
     dialog.innerHTML = `
         <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000;" onclick="closeEditDialog()">
             <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); min-width: 450px; font-family: Arial, sans-serif;" onclick="event.stopPropagation()">
-                <h3 style="margin: 0 0 20px 0; color: #333;">Edit Marker</h3>
+                <h3 style="margin: 0 0 20px 0; color: #333;">Editar viagem</h3>
 
-                <label style="display: block; margin-bottom: 5px; color: #555; font-weight: bold;">Description:</label>
+                <label style="display: block; margin-bottom: 5px; color: #555; font-weight: bold;">Descrição:</label>
                 <input type="text" id="editText" value="${currentText.replace(/"/g, '&quot;')}" style="width: 100%; padding: 10px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px;">
 
-                <label style="display: block; margin-bottom: 10px; color: #555; font-weight: bold;">Color:</label>
+                <label style="display: block; margin-bottom: 10px; color: #555; font-weight: bold;">Cor:</label>
 
                 <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                    <span style="color: #666;">Current:</span>
+                    <span style="color: #666;">Atual:</span>
                     <div id="currentEditColorBox" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 6px; background: ${displayColor};"></div>
                     <span style="color: #666;">${currentColor}</span>
                 </div>
@@ -544,7 +652,7 @@ function showEditDialog(markerId, currentText, currentColor) {
 
                 <div style="text-align: center; margin-bottom: 15px;">
                     <div style="display: inline-flex; align-items: center; gap: 10px;">
-                        <span style="color: #666;">New:</span>
+                        <span style="color: #666;">Nova:</span>
                         <div id="editSelectedColorBox" style="width: 30px; height: 30px; border: 2px solid #333; border-radius: 6px; background: ${displayColor};"></div>
                         <input type="text" id="editColorHexInput" value="${displayColor}" style="padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; width: 70px; font-size: 12px;" readonly>
                     </div>
@@ -552,7 +660,7 @@ function showEditDialog(markerId, currentText, currentColor) {
 
                 <div style="margin-bottom: 20px;">
                     <div style="text-align: center; margin-bottom: 8px;">
-                        <span style="color: #666; font-size: 12px;">Quick Select:</span>
+                        <span style="color: #666; font-size: 12px;">Paleta:</span>
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px;">
                         ${colorPalette.slice(0, 16).map(color => `
@@ -562,8 +670,8 @@ function showEditDialog(markerId, currentText, currentColor) {
                 </div>
 
                 <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
-                    <button onclick="saveEdit('${markerId}')" style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Save</button>
-                    <button onclick="closeEditDialog()" style="padding: 12px 20px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer;">Cancel</button>
+                    <button onclick="saveEdit('${markerId}')" style="padding: 12px 20px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Salvar</button>
+                    <button onclick="closeEditDialog()" style="padding: 12px 20px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer;">Cancelar</button>
                 </div>
             </div>
         </div>
@@ -716,10 +824,10 @@ function setupSearchBox() {
     searchContainer.id = 'locationSearchContainer';
     searchContainer.innerHTML = `
         <div style="position: fixed; bottom: 10px; left: 10px; background: rgba(255,255,255,0.95); border: 2px solid #333; border-radius: 8px; padding: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); font-family: Arial, sans-serif; min-width: 300px; z-index: 1000;">
-            <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">&#128269; Search Location</h4>
+            <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">&#128269; Pesquisar localidade</h4>
             <div style="display: flex; gap: 5px; margin-bottom: 8px;">
-                <input type="text" id="locationSearch" placeholder="Enter city, address, or place..." style="flex: 1; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
-                <button onclick="searchLocation()" style="padding: 6px 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Search</button>
+                <input type="text" id="locationSearch" placeholder="Cidade, endereço ou local..." style="flex: 1; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px;">
+                <button onclick="searchLocation()" style="padding: 6px 10px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Procurar</button>
             </div>
             <div id="searchResults" style="font-size: 11px; color: #666; min-height: 16px;"></div>
         </div>
@@ -736,11 +844,11 @@ window.searchLocation = function() {
     var results = document.getElementById('searchResults');
 
     if (!query) {
-        results.innerHTML = '<span style="color: red;">Please enter a location</span>';
+        results.innerHTML = '<span style="color: red;">Digite um lugar</span>';
         return;
     }
 
-    results.innerHTML = 'Searching...';
+    results.innerHTML = 'Procurando...';
 
     fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=3`)
     .then(response => response.json())
@@ -767,68 +875,138 @@ window.searchLocation = function() {
                     <h4>Search Result</h4>
                     <p><strong>${result.display_name}</strong></p>
                     <button onclick="addSearchMarkerWithColor(${lat}, ${lon}, '${displayName}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-top: 5px;">
-                        Add as Marker
+                        Adicionar como viagem
                     </button>
                 </div>
             `).openPopup();
 
             results.innerHTML = `<span style="color: green;">Found: ${result.display_name.substring(0, 50)}...</span>`;
         } else {
-            results.innerHTML = '<span style="color: red;">No results found</span>';
+            results.innerHTML = '<span style="color: red;">Sem resultados para a busca</span>';
         }
     })
     .catch(error => {
         console.error('Search error:', error);
-        results.innerHTML = '<span style="color: red;">Search failed</span>';
+        results.innerHTML = '<span style="color: red;">A busca falhou :(</span>';
     });
 };
 
 window.addSearchMarkerWithColor = function(lat, lon, name) {
+    console.log('addSearchMarkerWithColor called with:', { lat, lon, name });
+
+    // Close the search marker popup first
+    if (window.searchMarker) {
+        window.searchMarker.closePopup();
+    }
+
+    // Show color picker with the search coordinates
     showColorPicker(function(color) {
-        var text = prompt("Enter marker description:", name);
-        if (text && text.trim()) {
-            addMarker(lat, lon, text.trim(), color);
-            if (window.searchMarker) {
-                globalMap.removeLayer(window.searchMarker);
-                window.searchMarker = null;
-            }
+        console.log('Color selected:', color);
+        console.log('About to show description dialog with lat:', lat, 'lon:', lon);
+
+        // Pass the search location name as the default text
+        showMarkerDescriptionDialog(lat, lon, color, name);
+
+        // Remove the temporary search marker
+        if (window.searchMarker) {
+            globalMap.removeLayer(window.searchMarker);
+            window.searchMarker = null;
         }
     });
 };
 
+
 // ======================== MEMORY FUNCTIONS ========================
 window.addMemoryPrompt = function(markerId) {
-    var memory = prompt("Enter memory (text or URL):");
-    if (memory && memory.trim()) {
-        // Save current map state before making the request
-        saveMapState();
+    showMemoryInputDialog(markerId);
+};
 
-        fetch('/add_memory', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                marker_id: markerId,
-                memory_text: memory.trim()
-            })
+// New function to show memory input dialog
+function showMemoryInputDialog(markerId) {
+    var existing = document.getElementById('memoryInputDialog');
+    if (existing) document.body.removeChild(existing);
+
+    var dialog = document.createElement('div');
+    dialog.id = 'memoryInputDialog';
+    dialog.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;" onclick="closeMemoryInputDialog()">
+            <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 550px; width: 90%; font-family: Arial, sans-serif;" onclick="event.stopPropagation()">
+                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">&#128173; Adicionar Lembrança</h3>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #555; font-weight: bold;">Compartilhe sua lembrança:</label>
+                    <p style="font-size: 12px; color: #666; margin: 5px 0 15px 0;">Você pode adicionar um texto ou um link para foto/vídeo</p>
+                    <textarea id="memoryTextInput" placeholder="Ex: Foi uma viagem incrível! Conhecemos lugares maravilhosos...&#10;&#10;Ou cole um link: https://photos.app.goo.gl/..." style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; font-family: Arial, sans-serif; min-height: 120px; resize: vertical;"></textarea>
+                </div>
+
+                <div style="background: #f0f7ff; padding: 12px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #007bff;">
+                    <p style="margin: 0; font-size: 12px; color: #555;">
+                        <strong>&#128161; Dica:</strong> Links de fotos (Google Photos, Dropbox, etc.) ficam mais fáceis de acessar depois!
+                    </p>
+                </div>
+
+                <div style="text-align: center; display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="confirmMemoryInput('${markerId}')" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;">Salvar Lembrança</button>
+                    <button onclick="closeMemoryInputDialog()" style="padding: 12px 24px; border: 1px solid #ddd; border-radius: 8px; background: #f8f9fa; cursor: pointer; font-size: 14px;">Cancelar</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    setTimeout(() => {
+        var input = document.getElementById('memoryTextInput');
+        if (input) {
+            input.focus();
+        }
+    }, 100);
+}
+
+window.confirmMemoryInput = function(markerId) {
+    var input = document.getElementById('memoryTextInput');
+    var memory = input ? input.value.trim() : '';
+
+    if (!memory) {
+        alert('Por favor, insira uma lembrança antes de salvar');
+        if (input) input.focus();
+        return;
+    }
+
+    // Save current map state before making the request
+    saveMapState();
+
+    fetch('/add_memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            marker_id: markerId,
+            memory_text: memory
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                alert('Memory added!');
-                location.reload();
-            } else {
-                // Clear saved state if there was an error
-                sessionStorage.removeItem('mapState');
-                alert('Error: ' + (data.message || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error adding memory:', error);
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            alert('Lembrança adicionada com sucesso!');
+            closeMemoryInputDialog();
+            location.reload();
+        } else {
             // Clear saved state if there was an error
             sessionStorage.removeItem('mapState');
-            alert('Failed to add memory');
-        });
-    }
+            alert('Erro: ' + (data.message || 'Erro desconhecido'));
+        }
+    })
+    .catch(error => {
+        console.error('Erro ao adicionar memória:', error);
+        // Clear saved state if there was an error
+        sessionStorage.removeItem('mapState');
+        alert('Erro ao adicionar memória');
+    });
+};
+
+window.closeMemoryInputDialog = function() {
+    var dialog = document.getElementById('memoryInputDialog');
+    if (dialog) document.body.removeChild(dialog);
 };
 
 // ======================== UPDATED MEMORY VIEW FUNCTION ========================
@@ -863,13 +1041,13 @@ window.viewMemory = function(markerId) {
 
         } else {
             resumeArduino();
-            alert('No memory found');
+            alert('Não foi encontrado lembranças');
         }
     })
     .catch(error => {
-        console.error('Error getting memory:', error);
+        console.error('Erro ao relembrar:', error);
         resumeArduino();
-        alert('Failed to get memory');
+        alert('Erro ao relembrar');
     });
 };
 
@@ -901,16 +1079,16 @@ function showMemoryDialog(memory, markerId) {
     dialog.innerHTML = `
         <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;">
             <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); max-width: 600px; width: 90%; font-family: Arial, sans-serif;">
-                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">&#128205 Memory</h3>
+                <h3 style="margin: 0 0 20px 0; color: #333; text-align: center;">&#128205 Lembrança</h3>
 
                 ${isUrl ? `
                     <div style="margin-bottom: 20px; text-align: center;">
-                        <p style="color: #666; margin-bottom: 15px;">This memory contains a link:</p>
+                        <p style="color: #666; margin-bottom: 15px;">Click no link para relembrar...</p>
                         <a href="${memory}" target="_blank" style="color: #007bff; word-break: break-all; font-size: 14px;">${memory}</a>
                     </div>
                     <div style="text-align: center;">
                         <button onclick="window.open('${memory}', '_blank')" style="padding: 12px 24px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-right: 10px;">
-                            Open Link
+                            Abrir link
                         </button>
                         <button onclick="closeMemoryDialog()" style="padding: 12px 24px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">
                             OK
@@ -1026,15 +1204,6 @@ window.getVisibleMarkers = function() {
         return [];
     }
 };
-
-// Add this code to your context_menu.js file
-// Place it near the end, before the initialization section
-
-// Add this code to your context_menu.js file
-// Place it near the end, before the initialization section
-
-// Add this code to your context_menu.js file
-// Place it near the end, before the initialization section
 
 // ======================== WINDOW CLEANUP (LED OFF) ========================
 var tabIsVisible = true; // Track tab visibility state

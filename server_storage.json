@@ -1,26 +1,5 @@
 {
     "markers": {
-        "49b2c704-7a51-424a-bd25-0d9d0e806af2": {
-            "lat": -9.654907854199012,
-            "lon": -36.57348632812501,
-            "popup_text": "G (1)",
-            "tooltip_text": null,
-            "color": "#66ccff"
-        },
-        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": {
-            "lat": -16.726961081010632,
-            "lon": -45.76904296875001,
-            "popup_text": "New Marker (3)",
-            "tooltip_text": null,
-            "color": "#fd0602"
-        },
-        "9b3047dd-2775-43eb-b6db-b8d01a7e95c9": {
-            "lat": -4.653079918274038,
-            "lon": -55.37109375000001,
-            "popup_text": "New Marker (16)",
-            "tooltip_text": null,
-            "color": "#efbe10"
-        },
         "b11c871b-e52b-405c-a2b8-0b92f691d445": {
             "lat": -8.754794702435618,
             "lon": -50.71289062500001,
@@ -34,13 +13,41 @@
             "popup_text": "New Marker (9)",
             "tooltip_text": null,
             "color": "#00ff00"
+        },
+        "651827a6-60eb-4929-83db-ce3f556d87f1": {
+            "lat": -10.228437266155943,
+            "lon": -50.30639648437501,
+            "popup_text": "New Marker (14)",
+            "tooltip_text": null,
+            "color": "#f30c0d"
+        },
+        "949c07ce-f91f-4496-97d4-8389e558eef7": {
+            "lat": -8.78736824655623,
+            "lon": -49.98229980468751,
+            "popup_text": "Florian\u00f3polis (7)",
+            "tooltip_text": null,
+            "color": "#5a39c6"
+        },
+        "ae163062-30f7-4e54-b71d-078baa5ea248": {
+            "lat": -10.941191793456522,
+            "lon": -47.25219726562501,
+            "popup_text": "Florian\u00f3polis (6)",
+            "tooltip_text": null,
+            "color": "#f2240d"
+        },
+        "888483f3-6f83-4ac1-9d51-fefc6de4faeb": {
+            "lat": 48.8588897,
+            "lon": 2.320041,
+            "popup_text": "Paris (9)",
+            "tooltip_text": null,
+            "color": "#80ee11"
         }
     },
     "paths": {},
     "memories": {
-        "49b2c704-7a51-424a-bd25-0d9d0e806af2": "yfgf",
-        "6c2d4151-4ffb-4e01-b824-4a65ef7710d1": "hgvjhvjhv",
-        "39d20fd8-cfa9-4a3b-a59d-82983fcc2817": "cbxbcvb",
-        "b11c871b-e52b-405c-a2b8-0b92f691d445": "dgdfgdfgdfg"
+        "39d20fd8-cfa9-4a3b-a59d-82983fcc2817": "https://intra.almg.gov.br/api/login?redir=%2F",
+        "b11c871b-e52b-405c-a2b8-0b92f691d445": "dgdfgdfgdfg",
+        "949c07ce-f91f-4496-97d4-8389e558eef7": "https://claude.ai/chat/ee91cea4-bcea-443e-9fae-07e737a608d6",
+        "651827a6-60eb-4929-83db-ce3f556d87f1": "hgdyuh"
     }
 }

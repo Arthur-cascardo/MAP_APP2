@@ -36,7 +36,7 @@ current_visible_markers = []
 memory_view_trigger = None
 
 # Load once at module level (fastest)
-with open('./context_menu.js', 'r') as f:
+with open('./context_menu.js', 'r', encoding='utf-8') as f:
     JS_TEMPLATE = f.read()
 
 if os.path.exists(STORAGE_FILE):
@@ -182,7 +182,7 @@ def get_colored_marker_icon(color):
 def com_with_arduino():
     arduino_com = Arduino(url='http://127.0.0.1:5000/api/visible_markers',
                           memory_url='http://127.0.0.1:5000/api/memory_trigger',
-                          port='COM6',
+                          port='COM8',
                           baudrate=9600
                           )
     while True:
@@ -296,22 +296,22 @@ def index():
             <div>
                 <h4>{marker_data['popup_text']}</h4>
                 <p>Lat: {marker_data['lat']:.4f}, Lon: {marker_data['lon']:.4f}</p>
-                <p>Color: <span style="color: {marker_color};">● {marker_color.title()}</span></p>
+                <p>Cor: <span style="color: {marker_color};">● {marker_color.title()}</span></p>
         """
         if memory_text:
             popup_content_html += f"""
-                <p>Memory: <span style="color: green;">✓</span></p>
-                <button onclick="viewMemory('{marker_id}')">View Memory</button><br>
+                <p>Lembrança: <span style="color: green;">✓</span></p>
+                <button onclick="viewMemory('{marker_id}')">Relembrar</button><br>
             """
         else:
             popup_content_html += f"""
-                <p>Memory: <span style="color: red;">✗</span></p>
+                <p>Lembrança: <span style="color: red;">✗</span></p>
             """
 
         popup_content_html += f"""
-                <button onclick="addMemoryPrompt('{marker_id}')">Add Memory</button>
-                <button onclick="editMarkerPrompt('{marker_id}')" style="margin-left: 5px;">Edit Marker</button>
-                <button onclick="deleteMarker('{marker_id}')" style="margin-left: 5px; background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Delete Marker</button>
+                <button onclick="addMemoryPrompt('{marker_id}')">Adicionar lembrança</button>
+                <button onclick="editMarkerPrompt('{marker_id}')" style="margin-left: 5px;">Editar viagem</button>
+                <button onclick="deleteMarker('{marker_id}')" style="margin-left: 5px; background-color: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Deletar</button>
             </div>
         """
 
