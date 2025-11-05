@@ -7,16 +7,25 @@ import logging
 
 
 class Arduino:
-    def __init__(self, url, memory_url, port, baudrate):
+    def __init__(self, url, memory_url, storage_event, port, baudrate):
         """
         Initialize Arduino communication class.
+        OPTIMIZATION: Added storage_event for event-driven updates.
         """
         self.url = url
         self.memory_url = memory_url
+        self.storage_event = storage_event  # Event to signal storage changes
         self.port = port
         self.baudrate = baudrate
         self.marker_colors = {}
         self.serial_connection = None
+
+        # OPTIMIZATION: Cache for last sent packet to avoid redundant sends
+        self.last_regular_packet = None
+        self.last_memory_packet = None
+
+        # OPTIMIZATION: Pre-compile regex pattern (used frequently)
+        self.marker_number_pattern = re.compile(r'\((\d+)\)')
 
         # Setup logging
         logging.basicConfig(level=logging.INFO)
@@ -28,19 +37,22 @@ class Arduino:
         self.load_marker_colors('server_storage.json')
 
     def load_marker_colors(self, markers_file_path):
-        """Load marker colors from local JSON file"""
+        """
+        Load marker colors from local JSON file.
+        OPTIMIZATION: Only called on init and when storage changes (event-driven).
+        """
         try:
             with open(markers_file_path, 'r') as file:
                 data = json.load(file)
 
-            pattern = r'\((\d+)\)'
             colors_loaded = 0
 
             for marker_id, marker_data in data.get('markers', {}).items():
                 popup_text = marker_data.get('popup_text', '')
                 color_hex = marker_data.get('color', '#FFFFFF')
 
-                match = re.search(pattern, popup_text)
+                # OPTIMIZATION: Use pre-compiled pattern
+                match = self.marker_number_pattern.search(popup_text)
                 if match:
                     marker_number = int(match.group(1))
                     rgb_color = self.hex_to_rgb(color_hex)
@@ -66,17 +78,20 @@ class Arduino:
             self.marker_colors = {}
 
     def fetch_visible_markers(self):
-        """Fetch currently visible markers from Flask server"""
+        """
+        Fetch currently visible markers from Flask server.
+        OPTIMIZATION: Uses pre-compiled regex pattern.
+        """
         try:
             response = requests.get(self.url, timeout=5)
             response.raise_for_status()
             result = response.json()
 
             numbers = []
-            pattern = r'\((\d+)\)'
 
             for name in result.get('marker_names', []):
-                match = re.search(pattern, name)
+                # OPTIMIZATION: Use pre-compiled pattern
+                match = self.marker_number_pattern.search(name)
                 if match:
                     numbers.append(int(match.group(1)))
 
@@ -99,6 +114,10 @@ class Arduino:
                 color_rgb = result.get('color_rgb', [255, 255, 255])
 
                 self.logger.info(f"Memory trigger detected - Marker: {marker_number}, RGB: {tuple(color_rgb)}")
+
+                # CRITICAL FIX: Clear last memory packet to allow same marker to trigger again
+                self.last_memory_packet = None
+
                 return trigger_data
 
             return None
@@ -225,7 +244,10 @@ class Arduino:
         return None
 
     def run_communication_to_arduino(self):
-        """Main communication loop with pause support"""
+        """
+        Main communication loop with event-driven updates.
+        OPTIMIZATION: Increased polling to 0.5 second + event-driven color reloading.
+        """
         if not self.open_serial_connection():
             self.logger.error("Cannot start communication - serial connection failed")
             return
@@ -234,54 +256,65 @@ class Arduino:
         self.load_marker_colors('server_storage.json')
 
         try:
-            loop_count = 0
             while True:
-                time.sleep(0.3)
-                loop_count += 1
+                # OPTIMIZATION: Balanced sleep - responsive but efficient
+                time.sleep(0.5)
 
-                # Reload colors every 10 loops (every 3 seconds)
-                if loop_count % 10 == 0:
+                # OPTIMIZATION: Check if storage changed (event-driven instead of periodic polling)
+                if self.storage_event.is_set():
+                    self.logger.info("Storage changed - reloading marker colors")
                     self.load_marker_colors('server_storage.json')
+                    self.storage_event.clear()
 
                 # Priority 1: Check for memory triggers FIRST (even if paused)
                 memory_trigger = self.fetch_memory_trigger()
                 if memory_trigger:
                     packet = self.create_memory_packet(memory_trigger)
-                    if packet and self.send_packet(packet):
-                        header = packet[:4].hex()
-                        marker_num = packet[4]
-                        r, g, b = packet[5], packet[6], packet[7]
 
-                        self.logger.info(f"MEMORY TRIGGER SENT - Header: {header}, "
-                                         f"Marker: {marker_num}, RGB: ({r},{g},{b})")
+                    # CRITICAL FIX: Don't cache memory packets - allow same marker multiple times
+                    if packet:
+                        if self.send_packet(packet):
+                            header = packet[:4].hex()
+                            marker_num = packet[4]
+                            r, g, b = packet[5], packet[6], packet[7]
 
-                        # Read Arduino response
-                        time.sleep(0.1)
-                        for _ in range(10):
-                            response = self.read_arduino_response()
-                            if response is None:
-                                break
-                            time.sleep(0.05)
+                            self.logger.info(f"MEMORY TRIGGER SENT - Header: {header}, "
+                                             f"Marker: {marker_num}, RGB: ({r},{g},{b})")
+
+                            # Read Arduino response
+                            time.sleep(0.1)
+                            for _ in range(10):
+                                response = self.read_arduino_response()
+                                if response is None:
+                                    break
+                                time.sleep(0.05)
                     continue
 
                 # Check if Arduino communication is paused (AFTER memory trigger check)
                 from __main__ import arduino_paused
 
                 if arduino_paused:
-                    self.logger.info("Arduino communication paused - waiting for resume...")
-                    continue  # Skip regular packets
+                    if self.last_regular_packet is not None:
+                        self.logger.info("Paused - clearing packet cache for fresh start on resume")
+                        self.last_regular_packet = None
+                    continue
 
                 # Priority 2: Send regular marker data (only if not paused)
                 markers = self.fetch_visible_markers()
                 packet = self.create_regular_packet(markers)
 
-                if self.send_packet(packet):
-                    position_mask = int.from_bytes(packet[:2], byteorder="big")
-                    active_count = bin(position_mask).count('1')
+                # OPTIMIZATION: Only send if packet changed (prevents redundant sends)
+                if packet != self.last_regular_packet:
+                    if self.send_packet(packet):
+                        self.last_regular_packet = packet
+                        position_mask = int.from_bytes(packet[:2], byteorder="big")
+                        active_count = bin(position_mask).count('1')
 
-                    if active_count > 0:
-                        self.logger.info(f"REGULAR DATA SENT - Active LEDs: {active_count}, "
-                                         f"Markers: {markers}")
+                        if active_count > 0:
+                            self.logger.info(f"REGULAR DATA SENT - Active LEDs: {active_count}, "
+                                             f"Markers: {markers}")
+                        else:
+                            self.logger.info("All LEDs OFF (no visible markers)")
 
                 # Check for Arduino responses
                 self.read_arduino_response()

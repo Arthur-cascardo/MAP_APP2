@@ -7,10 +7,15 @@ var rightClickCoords = null;
 var contextMenuElement = null;
 var setupAttempts = 0;
 var maxSetupAttempts = 50;
-var visibleMarkersInterval = null;
+
+// OPTIMIZATION: Removed visibleMarkersInterval - no more 1-second polling!
+// Instead, we update only on map move/zoom events
 
 // Store marker data for visibility checking
 var allMarkersData = {{MARKERS_DATA}};
+
+// OPTIMIZATION: Cache for color wheel canvas (drawn once, reused)
+var cachedColorWheelCanvas = null;
 
 // Color options for markers
 var markerColors = {
@@ -46,7 +51,7 @@ function saveMapState() {
         timestamp: Date.now()
     };
 
-    // Store in sessionStorage (will persist during page reload but not across browser sessions)
+    // Store in sessionStorage
     try {
         sessionStorage.setItem('mapState', JSON.stringify(mapState));
         console.log('Map state saved:', mapState);
@@ -64,12 +69,9 @@ function restoreMapState() {
             var mapState = JSON.parse(savedState);
 
             // Only restore if the state was saved recently (within 30 seconds)
-            // This prevents restoring very old states
             if (Date.now() - mapState.timestamp < 30000) {
                 console.log('Restoring map state:', mapState);
                 globalMap.setView([mapState.lat, mapState.lng], mapState.zoom);
-
-                // Clear the saved state after restoring
                 sessionStorage.removeItem('mapState');
             } else {
                 console.log('Map state too old, not restoring');
@@ -98,15 +100,14 @@ function getColorHex(colorName) {
 
 // Helper function to create colored marker icons
 function createDefaultColoredMarkerIcon(color) {
-
    return L.icon({
     iconUrl: "https://raw.githubusercontent.com/Arthur-cascardo/Files/refs/heads/main/pinwithshadow2.png",
     shadowUrl: 'https://raw.githubusercontent.com/Arthur-cascardo/Files/refs/heads/main/240_F_575062297_mNZCb6oLPOpTVIRQuZBSNT1xDsMezbi4%20(1).png',
-    iconSize:     [30, 41],   // your custom marker size
-    iconAnchor:   [15, 41],   // horizontally centered, bottom tip
-    popupAnchor:  [0, -35],   // popup sits above marker
-    shadowSize:   [41, 41],   // scaled wider for the 30px icon
-    shadowAnchor: [15, 41]    // aligns bottom center of shadow with marker tip
+    iconSize:     [30, 41],
+    iconAnchor:   [15, 41],
+    popupAnchor:  [0, -35],
+    shadowSize:   [41, 41],
+    shadowAnchor: [15, 41]
    });
 }
 
@@ -123,8 +124,19 @@ function hslToHex(h, s, l) {
     return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// Helper function to draw color wheel
-function drawColorWheel(ctx, centerX, centerY, radius) {
+// OPTIMIZATION: Create cached color wheel once, reuse everywhere
+function createCachedColorWheel() {
+    if (cachedColorWheelCanvas) return cachedColorWheelCanvas;
+
+    var canvas = document.createElement('canvas');
+    canvas.width = 150;
+    canvas.height = 150;
+    var ctx = canvas.getContext('2d');
+    var centerX = canvas.width / 2;
+    var centerY = canvas.height / 2;
+    var radius = 65;
+
+    // Draw the color wheel once
     for (let angle = 0; angle < 360; angle++) {
         for (let r = 0; r < radius; r++) {
             const rad = (angle * Math.PI) / 180;
@@ -136,6 +148,17 @@ function drawColorWheel(ctx, centerX, centerY, radius) {
             ctx.fillRect(x, y, 1, 1);
         }
     }
+
+    cachedColorWheelCanvas = canvas;
+    console.log('Color wheel cached');
+    return canvas;
+}
+
+// OPTIMIZATION: Use cached canvas instead of redrawing
+function drawColorWheel(ctx, centerX, centerY, radius) {
+    // This function is now just a wrapper that copies the cached canvas
+    var cached = createCachedColorWheel();
+    ctx.drawImage(cached, 0, 0);
 }
 
 function findAndSetupMap() {
@@ -293,12 +316,14 @@ function initializeAddColorWheel() {
     var canvas = document.getElementById('addColorWheel');
     if (!canvas) return;
 
+    // OPTIMIZATION: Use cached color wheel
     var ctx = canvas.getContext('2d');
+    var cachedWheel = createCachedColorWheel();
+    ctx.drawImage(cachedWheel, 0, 0);
+
     var centerX = canvas.width / 2;
     var centerY = canvas.height / 2;
     var radius = 65;
-
-    drawColorWheel(ctx, centerX, centerY, radius);
 
     canvas.addEventListener('click', function(event) {
         var rect = canvas.getBoundingClientRect();
@@ -319,7 +344,7 @@ function initializeAddColorWheel() {
 }
 
 window.selectAddPresetColor = function(color) {
-    updateAddSelectedColor(color, false); // Palette colors are hex values
+    updateAddSelectedColor(color, false);
 };
 
 window.selectColorFromPicker = function(colorName) {
@@ -330,8 +355,7 @@ window.selectColorFromPicker = function(colorName) {
 
 function updateAddSelectedColor(color) {
     window.selectedAddColorHex = color;
-    // Use hex directly
-    window.selectedAddColor = color; // Use hex value directly
+    window.selectedAddColor = color;
 
     var colorBox = document.getElementById('addSelectedColorBox');
     var hexInput = document.getElementById('addColorHexInput');
@@ -343,15 +367,13 @@ function updateAddSelectedColor(color) {
 window.confirmColorSelection = function() {
     console.log('=== confirmColorSelection called ===');
 
-    // Use the hex value directly instead of converting to predefined color
     var selectedColor = window.selectedAddColorHex || '#0066cc';
     console.log('Selected color:', selectedColor);
 
-    // IMPORTANT: Store callback before closing picker (which clears it)
     var callback = window.colorPickerCallback;
     var coords = rightClickCoords;
 
-    closeColorPicker(); // This clears window.colorPickerCallback!
+    closeColorPicker();
     console.log('Color picker closed');
 
     if (callback) {
@@ -371,7 +393,6 @@ window.confirmColorSelection = function() {
 };
 
 window.selectColor = function(color) {
-    // Keep this for backward compatibility, but redirect to new function
     selectColorFromPicker(color);
 };
 
@@ -469,12 +490,10 @@ window.addMarkerWithColorPicker = function() {
     });
 };
 
-// New function to show marker description dialog
 function showMarkerDescriptionDialog(lat, lng, color, defaultText) {
     var existing = document.getElementById('markerDescDialog');
     if (existing) document.body.removeChild(existing);
 
-    // Use defaultText if provided, otherwise empty
     var inputValue = defaultText ? defaultText.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
     var placeholderText = defaultText ? '' : 'Ex: Viagem para Paris, Final de semana na praia...';
 
@@ -507,10 +526,8 @@ function showMarkerDescriptionDialog(lat, lng, color, defaultText) {
 
     document.body.appendChild(dialog);
 
-    // Store the values for the button click
     window.pendingMarkerData = { lat: lat, lng: lng, color: color };
 
-    // Add event listeners
     document.getElementById('markerDescBackdrop').addEventListener('click', closeMarkerDescDialog);
     document.getElementById('cancelMarkerBtn').addEventListener('click', closeMarkerDescDialog);
     document.getElementById('confirmMarkerBtn').addEventListener('click', function() {
@@ -570,7 +587,9 @@ window.closeMarkerDescDialog = function() {
 function addMarker(lat, lon, text, color) {
     console.log('Attempting to add marker:', { lat, lon, text, color });
 
-    // Save current map state before making the request
+    // Show loading immediately
+    showLoading('Adicionando viagem...');
+
     saveMapState();
 
     fetch('/add_marker', {
@@ -583,41 +602,63 @@ function addMarker(lat, lon, text, color) {
             color: color || '#ffffff'
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         console.log('Add marker response:', data);
+
         if (data.status === 'success') {
-            alert('Marker added successfully!');
-            location.reload();
+            // Change loading message before reload
+            showLoading('Viagem adicionada! Atualizando mapa...');
+
+            // Small delay so user sees success message
+            setTimeout(function() {
+                location.reload();
+            }, 500);
         } else {
-            // Clear saved state if there was an error
+            hideLoading();
             sessionStorage.removeItem('mapState');
-            alert('Error: ' + (data.message || 'Unknown error'));
+            alert('Erro: ' + (data.message || 'Erro desconhecido'));
         }
     })
     .catch(error => {
         console.error('Error adding marker:', error);
-        // Clear saved state if there was an error
+        hideLoading();
         sessionStorage.removeItem('mapState');
-        alert('Failed to add marker: ' + error.message);
+        alert('Falha ao adicionar viagem: ' + error.message);
     });
 }
 
 window.editMarkerPrompt = function(markerId) {
     console.log('Editing marker:', markerId);
 
+    // Show loading while fetching marker data
+    showLoading('Carregando dados da viagem...');
+
     fetch('/get_marker/' + markerId)
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to fetch marker');
+        }
+        return response.json();
+    })
     .then(data => {
+        hideLoading();
+
         if (data.status === 'success') {
             showEditDialog(markerId, data.marker.popup_text, data.marker.color || 'blue');
         } else {
-            alert('Error getting marker data: ' + (data.message || 'Unknown error'));
+            alert('Erro ao carregar dados: ' + (data.message || 'Erro desconhecido'));
         }
     })
     .catch(error => {
         console.error('Error getting marker data:', error);
-        alert('Failed to get marker data');
+        hideLoading();
+        alert('Falha ao carregar dados da viagem');
     });
 };
 
@@ -625,7 +666,6 @@ function showEditDialog(markerId, currentText, currentColor) {
     var existing = document.getElementById('editDialog');
     if (existing) document.body.removeChild(existing);
 
-    // Handle both hex colors and predefined color names
     var displayColor = currentColor.startsWith('#') ? currentColor : getColorHex(currentColor);
 
     var dialog = document.createElement('div');
@@ -695,12 +735,14 @@ function initializeEditColorWheel() {
     var canvas = document.getElementById('editColorWheel');
     if (!canvas) return;
 
+    // OPTIMIZATION: Use cached color wheel
     var ctx = canvas.getContext('2d');
+    var cachedWheel = createCachedColorWheel();
+    ctx.drawImage(cachedWheel, 0, 0);
+
     var centerX = canvas.width / 2;
     var centerY = canvas.height / 2;
     var radius = 65;
-
-    drawColorWheel(ctx, centerX, centerY, radius);
 
     canvas.addEventListener('click', function(event) {
         var rect = canvas.getBoundingClientRect();
@@ -726,8 +768,7 @@ window.selectEditPresetColor = function(color) {
 
 function updateEditSelectedColor(color) {
     window.selectedEditColorHex = color;
-    // Use hex directly
-    window.selectedEditColor = color; // Use hex value directly
+    window.selectedEditColor = color;
 
     var colorBox = document.getElementById('editSelectedColorBox');
     var hexInput = document.getElementById('editColorHexInput');
@@ -743,10 +784,12 @@ window.saveEdit = function(markerId) {
         return;
     }
 
-    // Use the hex value directly instead of converting to predefined color
     var colorToSave = window.selectedEditColorHex || '#0066cc';
 
-    // Save current map state before making the request
+    // Show loading and close dialog
+    closeEditDialog();
+    showLoading('Salvando alterações...');
+
     saveMapState();
 
     fetch('/edit_marker', {
@@ -758,23 +801,31 @@ window.saveEdit = function(markerId) {
             color: colorToSave
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.status === 'success') {
-            alert('Marker updated successfully!');
-            closeEditDialog();
-            location.reload();
+            // Change loading message before reload
+            showLoading('Viagem atualizada! Recarregando...');
+
+            setTimeout(function() {
+                location.reload();
+            }, 500);
         } else {
-            // Clear saved state if there was an error
+            hideLoading();
             sessionStorage.removeItem('mapState');
-            alert('Error: ' + (data.message || 'Unknown error'));
+            alert('Erro: ' + (data.message || 'Erro desconhecido'));
         }
     })
     .catch(error => {
         console.error('Error updating marker:', error);
-        // Clear saved state if there was an error
+        hideLoading();
         sessionStorage.removeItem('mapState');
-        alert('Failed to update marker');
+        alert('Falha ao atualizar viagem');
     });
 };
 
@@ -786,33 +837,46 @@ window.closeEditDialog = function() {
 };
 
 window.deleteMarker = function(markerId) {
-    if (confirm("Are you sure you want to delete this marker?")) {
-        // Save current map state before making the request
-        saveMapState();
-
-        fetch('/delete_marker', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ marker_id: markerId })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                alert('Marker deleted!');
-                location.reload();
-            } else {
-                // Clear saved state if there was an error
-                sessionStorage.removeItem('mapState');
-                alert('Error: ' + (data.message || 'Unknown error'));
-            }
-        })
-        .catch(error => {
-            console.error('Error deleting marker:', error);
-            // Clear saved state if there was an error
-            sessionStorage.removeItem('mapState');
-            alert('Failed to delete marker');
-        });
+    if (!confirm("Tem certeza que deseja deletar esta viagem?")) {
+        return;
     }
+
+    // Show loading immediately after confirmation
+    showLoading('Deletando viagem...');
+
+    saveMapState();
+
+    fetch('/delete_marker', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marker_id: markerId })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            // Change loading message before reload
+            showLoading('Viagem deletada! Atualizando mapa...');
+
+            setTimeout(function() {
+                location.reload();
+            }, 500);
+        } else {
+            hideLoading();
+            sessionStorage.removeItem('mapState');
+            alert('Erro: ' + (data.message || 'Erro desconhecido'));
+        }
+    })
+    .catch(error => {
+        console.error('Error deleting marker:', error);
+        hideLoading();
+        sessionStorage.removeItem('mapState');
+        alert('Falha ao deletar viagem');
+    });
 };
 
 // ======================== SEARCH BOX ========================
@@ -848,10 +912,16 @@ window.searchLocation = function() {
         return;
     }
 
-    results.innerHTML = 'Procurando...';
+    // Show inline loading in search results
+    results.innerHTML = '<span style="color: #007bff;">🔍 Procurando...</span>';
 
     fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=3`)
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Search failed');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data && data.length > 0) {
             var result = data[0];
@@ -872,7 +942,7 @@ window.searchLocation = function() {
 
             window.searchMarker.bindPopup(`
                 <div>
-                    <h4>Search Result</h4>
+                    <h4>Resultado da Busca</h4>
                     <p><strong>${result.display_name}</strong></p>
                     <button onclick="addSearchMarkerWithColor(${lat}, ${lon}, '${displayName}')" style="background: #28a745; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-top: 5px;">
                         Adicionar como viagem
@@ -880,34 +950,30 @@ window.searchLocation = function() {
                 </div>
             `).openPopup();
 
-            results.innerHTML = `<span style="color: green;">Found: ${result.display_name.substring(0, 50)}...</span>`;
+            results.innerHTML = `<span style="color: green;">✓ Encontrado: ${result.display_name.substring(0, 40)}...</span>`;
         } else {
-            results.innerHTML = '<span style="color: red;">Sem resultados para a busca</span>';
+            results.innerHTML = '<span style="color: red;">✗ Sem resultados</span>';
         }
     })
     .catch(error => {
         console.error('Search error:', error);
-        results.innerHTML = '<span style="color: red;">A busca falhou :(</span>';
+        results.innerHTML = '<span style="color: red;">✗ Erro na busca</span>';
     });
 };
 
 window.addSearchMarkerWithColor = function(lat, lon, name) {
     console.log('addSearchMarkerWithColor called with:', { lat, lon, name });
 
-    // Close the search marker popup first
     if (window.searchMarker) {
         window.searchMarker.closePopup();
     }
 
-    // Show color picker with the search coordinates
     showColorPicker(function(color) {
         console.log('Color selected:', color);
         console.log('About to show description dialog with lat:', lat, 'lon:', lon);
 
-        // Pass the search location name as the default text
         showMarkerDescriptionDialog(lat, lon, color, name);
 
-        // Remove the temporary search marker
         if (window.searchMarker) {
             globalMap.removeLayer(window.searchMarker);
             window.searchMarker = null;
@@ -915,13 +981,11 @@ window.addSearchMarkerWithColor = function(lat, lon, name) {
     });
 };
 
-
 // ======================== MEMORY FUNCTIONS ========================
 window.addMemoryPrompt = function(markerId) {
     showMemoryInputDialog(markerId);
 };
 
-// New function to show memory input dialog
 function showMemoryInputDialog(markerId) {
     var existing = document.getElementById('memoryInputDialog');
     if (existing) document.body.removeChild(existing);
@@ -973,7 +1037,10 @@ window.confirmMemoryInput = function(markerId) {
         return;
     }
 
-    // Save current map state before making the request
+    // Close dialog and show loading
+    closeMemoryInputDialog();
+    showLoading('Salvando lembrança...');
+
     saveMapState();
 
     fetch('/add_memory', {
@@ -984,23 +1051,31 @@ window.confirmMemoryInput = function(markerId) {
             memory_text: memory
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.status === 'success') {
-            alert('Lembrança adicionada com sucesso!');
-            closeMemoryInputDialog();
-            location.reload();
+            // Change loading message before reload
+            showLoading('Lembrança salva! Atualizando...');
+
+            setTimeout(function() {
+                location.reload();
+            }, 500);
         } else {
-            // Clear saved state if there was an error
+            hideLoading();
             sessionStorage.removeItem('mapState');
             alert('Erro: ' + (data.message || 'Erro desconhecido'));
         }
     })
     .catch(error => {
         console.error('Erro ao adicionar memória:', error);
-        // Clear saved state if there was an error
+        hideLoading();
         sessionStorage.removeItem('mapState');
-        alert('Erro ao adicionar memória');
+        alert('Erro ao adicionar lembrança');
     });
 };
 
@@ -1013,7 +1088,9 @@ window.closeMemoryInputDialog = function() {
 window.viewMemory = function(markerId) {
     console.log('Viewing memory for marker:', markerId);
 
-    // Step 1: PAUSE Arduino communication first
+    // Show loading while preparing memory view
+    showLoading('Preparando lembrança...');
+
     fetch('/api/pause_arduino', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1023,36 +1100,42 @@ window.viewMemory = function(markerId) {
     .then(pauseData => {
         console.log('Arduino paused:', pauseData);
 
-        // Step 2: Trigger the memory effect (this sends the trigger packet to Arduino)
+        // Update loading message
+        showLoading('Carregando lembrança...');
+
         return fetch('/get_memory/' + markerId);
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Failed to fetch memory');
+        }
+        return response.json();
+    })
     .then(data => {
+        hideLoading();
+
         if (data.status === 'success') {
             var memory = data.memory;
-
-            // Step 3: Show dialog immediately
-            // LEDs will stay lit in the marker color until user clicks OK
             setTimeout(function() {
                 showMemoryDialog(memory, markerId);
             }, 100);
-
-            console.log('Memory trigger sent - wave effect starting, dialog will show after effect');
-
+            console.log('Memory trigger sent - wave effect starting');
         } else {
             resumeArduino();
-            alert('Não foi encontrado lembranças');
+            alert('Não foram encontradas lembranças');
         }
     })
     .catch(error => {
         console.error('Erro ao relembrar:', error);
+        hideLoading();
         resumeArduino();
-        alert('Erro ao relembrar');
+        alert('Erro ao carregar lembrança');
     });
 };
 
 function resumeArduino() {
     console.log('Resuming Arduino communication...');
+
     fetch('/api/pause_arduino', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1061,13 +1144,24 @@ function resumeArduino() {
     .then(response => response.json())
     .then(data => {
         console.log('Arduino resumed:', data);
+
+        // Multiple updates to ensure at least one succeeds
+        updateVisibleMarkers();
+
+        setTimeout(function() {
+            updateVisibleMarkers();
+        }, 200);
+
+        setTimeout(function() {
+            updateVisibleMarkers();
+            console.log('LEDs should be restored now');
+        }, 500);
     })
     .catch(error => {
         console.error('Error resuming Arduino:', error);
     });
 }
 
-// New function to show memory in a custom dialog
 function showMemoryDialog(memory, markerId) {
     var existing = document.getElementById('memoryDialog');
     if (existing) document.body.removeChild(existing);
@@ -1111,14 +1205,11 @@ function showMemoryDialog(memory, markerId) {
     document.body.appendChild(dialog);
 }
 
-// Function to close memory dialog and resume Arduino
 window.closeMemoryDialog = function() {
     var dialog = document.getElementById('memoryDialog');
     if (dialog) {
         document.body.removeChild(dialog);
     }
-
-    // RESUME Arduino communication when user closes dialog
     resumeArduino();
 };
 
@@ -1139,15 +1230,38 @@ function enforceWorldBounds() {
     }
 }
 
+// OPTIMIZATION: Debounce function to prevent excessive updates
+function debounce(func, wait) {
+    var timeout;
+    return function executedFunction() {
+        var context = this;
+        var args = arguments;
+        var later = function() {
+            timeout = null;
+            func.apply(context, args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// OPTIMIZATION: Only update when map actually moves/zooms (no more 1-second interval!)
 function startVisibleMarkersTracking() {
     if (!globalMap) return;
 
     try {
+        // Initial update
         updateVisibleMarkers();
-        if (visibleMarkersInterval) clearInterval(visibleMarkersInterval);
-        visibleMarkersInterval = setInterval(updateVisibleMarkers, 1000);
-        globalMap.on('moveend', updateVisibleMarkers);
-        globalMap.on('zoomend', updateVisibleMarkers);
+
+        // OPTIMIZATION: Debounced update - only fires 500ms after user stops moving map
+        var debouncedUpdate = debounce(updateVisibleMarkers, 200);
+
+        // REMOVED: setInterval(updateVisibleMarkers, 1000);
+        // Now only updates on actual map events
+        globalMap.on('moveend', debouncedUpdate);
+        globalMap.on('zoomend', debouncedUpdate);
+
+        console.log('Visible markers tracking: EVENT-DRIVEN (no polling!)');
     } catch (error) {
         console.error('Error starting visible markers tracking:', error);
     }
@@ -1206,12 +1320,11 @@ window.getVisibleMarkers = function() {
 };
 
 // ======================== WINDOW CLEANUP (LED OFF) ========================
-var tabIsVisible = true; // Track tab visibility state
+var tabIsVisible = true;
 
 function cleanupLEDs() {
     console.log('Turning off LEDs...');
 
-    // Send an empty markers list to turn off LEDs
     fetch('/visible_markers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1224,24 +1337,9 @@ function cleanupLEDs() {
     });
 }
 
-// Override the updateVisibleMarkers function to check tab visibility
-var originalUpdateVisibleMarkers = window.updateVisibleMarkers;
-if (typeof originalUpdateVisibleMarkers === 'function') {
-    window.updateVisibleMarkers = function() {
-        if (tabIsVisible) {
-            originalUpdateVisibleMarkers();
-        } else {
-            console.log('Tab hidden - skipping markers update');
-        }
-    };
-    console.log('updateVisibleMarkers function wrapped with visibility check');
-}
-
-// Listen for window close event
 window.addEventListener('beforeunload', function(event) {
     console.log('Window closing');
     tabIsVisible = false;
-    // Use the cleanup endpoint for permanent shutdown
     if (navigator.sendBeacon) {
         var blob = new Blob([JSON.stringify({})], { type: 'application/json' });
         navigator.sendBeacon('/api/cleanup_leds', blob);
@@ -1255,7 +1353,6 @@ window.addEventListener('beforeunload', function(event) {
     }
 });
 
-// Listen for tab visibility changes (switching tabs, minimizing window)
 document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'hidden') {
         console.log('Tab hidden - turning off LEDs and pausing updates');
@@ -1264,7 +1361,6 @@ document.addEventListener('visibilitychange', function() {
     } else {
         console.log('Tab visible - resuming updates and restoring LEDs');
         tabIsVisible = true;
-        // Immediately send current visible markers
         setTimeout(function() {
             if (typeof updateVisibleMarkers === 'function') {
                 updateVisibleMarkers();
@@ -1274,7 +1370,6 @@ document.addEventListener('visibilitychange', function() {
     }
 });
 
-// Listen for page hide (backup for mobile/older browsers)
 window.addEventListener('pagehide', function(event) {
     console.log('Page hide');
     tabIsVisible = false;
@@ -1285,6 +1380,55 @@ window.addEventListener('pagehide', function(event) {
 });
 
 console.log('LED cleanup handlers registered (window close + tab switching with pause)');
+
+// ======================== LOADING INDICATOR SYSTEM ========================
+
+function createLoadingOverlay() {
+    if (document.getElementById('loadingOverlay')) return;
+
+    var overlay = document.createElement('div');
+    overlay.id = 'loadingOverlay';
+    overlay.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); z-index: 99999; display: none; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 30px 40px; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); text-align: center; font-family: Arial, sans-serif;">
+                <div class="spinner" style="margin: 0 auto 15px; width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                <div id="loadingText" style="color: #333; font-size: 16px; font-weight: 500;">Carregando...</div>
+            </div>
+        </div>
+        <style>
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    document.body.appendChild(overlay);
+}
+
+function showLoading(message) {
+    createLoadingOverlay();
+    var overlay = document.getElementById('loadingOverlay');
+    var text = document.getElementById('loadingText');
+
+    if (message) text.textContent = message;
+    overlay.style.display = 'flex';
+    console.log('Loading:', message || 'Processing...');
+}
+
+function hideLoading() {
+    var overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+    console.log('Loading complete');
+}
+
+// Initialize loading overlay when page loads
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', createLoadingOverlay);
+} else {
+    createLoadingOverlay();
+}
 
 // ======================== INITIALIZATION ========================
 function initializeScript() {

@@ -35,6 +35,9 @@ current_visible_markers = []
 # Global variable to store memory view trigger data for Arduino
 memory_view_trigger = None
 
+# OPTIMIZATION: Event for notifying Arduino of storage changes
+storage_changed_event = threading.Event()
+
 # Load once at module level (fastest)
 with open('./context_menu.js', 'r', encoding='utf-8') as f:
     JS_TEMPLATE = f.read()
@@ -61,6 +64,9 @@ def save_storage():
     """Save the server_storage dictionary to JSON."""
     with open(STORAGE_FILE, "w") as f:
         json.dump(server_storage, f, indent=4)
+
+    # OPTIMIZATION: Signal Arduino that storage has changed
+    storage_changed_event.set()
 
 
 def get_marker_number_from_id(marker_id):
@@ -93,6 +99,7 @@ def get_marker_number_from_id(marker_id):
         log.error(f"Error extracting marker number for ID '{marker_id}': {e}")
         return None
 
+
 def hex_color_to_rgb(hex_color):
     """Convert hex color to RGB tuple."""
     if hex_color.startswith('#'):
@@ -103,7 +110,7 @@ def hex_color_to_rgb(hex_color):
 def create_memory_view_array(marker_id, marker_color):
     """
     Create a unique 50-byte array for memory view trigger.
-    Format: [4-byte header][MARKER_NUMBER][B][R][G][43 padding bytes]
+    Format: [4-byte header][MARKER_NUMBER][R][B][G][43 padding bytes]
     """
     MEMORY_HEADER = [0xFF, 0xFE, 0xFD, 0xFC]
 
@@ -117,9 +124,9 @@ def create_memory_view_array(marker_id, marker_color):
     memory_array[2] = MEMORY_HEADER[2]
     memory_array[3] = MEMORY_HEADER[3]
     memory_array[4] = marker_number  # Index 4
-    memory_array[5] = r              # Index 5 - RED (was R)
-    memory_array[6] = b              # Index 6 - BLUE (was G)
-    memory_array[7] = g              # Index 7 - GREEN (was B)
+    memory_array[5] = r  # Index 5 - RED
+    memory_array[6] = b  # Index 6 - BLUE
+    memory_array[7] = g  # Index 7 - GREEN
 
     # DEBUG LOGGING
     print(f"Created memory array:")
@@ -130,15 +137,32 @@ def create_memory_view_array(marker_id, marker_color):
 
     return memory_array
 
-# Cache for colored icons
+
+# OPTIMIZATION: Cache for colored icons - moved to module level with persistent cache
 _icon_cache = {}
+_base_marker_image = None  # Cache the base image too
+
+
+def get_base_marker_image():
+    """
+    Download and cache the base marker image once.
+    OPTIMIZATION: Prevents repeated downloads.
+    """
+    global _base_marker_image
+
+    if _base_marker_image is None:
+        base_url = "https://raw.githubusercontent.com/Arthur-cascardo/Files/refs/heads/main/pinwithshadow2.png"
+        response = requests.get(base_url)
+        _base_marker_image = Image.open(BytesIO(response.content)).convert("RGBA")
+        print("Base marker image downloaded and cached")
+
+    return _base_marker_image.copy()  # Return a copy to avoid modifying cached version
 
 
 def get_colored_marker_icon(color):
     """
     Create or retrieve a custom colored marker icon.
-    Recolors only the #7f3a3a area, preserves outline/inner circle.
-    Uses caching so each color is generated only once.
+    OPTIMIZATION: Uses cached base image + faster recoloring.
     """
     if color in _icon_cache:
         return folium.CustomIcon(
@@ -148,15 +172,13 @@ def get_colored_marker_icon(color):
             popup_anchor=(1, -34)
         )
 
-    # Download base image
-    base_url = "https://raw.githubusercontent.com/Arthur-cascardo/Files/refs/heads/main/pinwithshadow2.png"
-    response = requests.get(base_url)
-    base_img = Image.open(BytesIO(response.content)).convert("RGBA")
+    # Get cached base image
+    base_img = get_base_marker_image()
 
     target_rgb = (127, 58, 58)  # #7f3a3a
     new_rgb = tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
 
-    # Fast recolor with putdata
+    # OPTIMIZATION: Faster recolor with list comprehension (still fast without numpy)
     data = base_img.getdata()
     new_data = [(new_rgb[0], new_rgb[1], new_rgb[2], a) if (r, g, b) == target_rgb else (r, g, b, a)
                 for r, g, b, a in data]
@@ -180,11 +202,13 @@ def get_colored_marker_icon(color):
 
 
 def com_with_arduino():
-    arduino_com = Arduino(url='http://127.0.0.1:5000/api/visible_markers',
-                          memory_url='http://127.0.0.1:5000/api/memory_trigger',
-                          port='COM8',
-                          baudrate=9600
-                          )
+    arduino_com = Arduino(
+        url='http://127.0.0.1:5000/api/visible_markers',
+        memory_url='http://127.0.0.1:5000/api/memory_trigger',
+        storage_event=storage_changed_event,  # Pass the event for notifications
+        port='COM8',
+        baudrate=9600
+    )
     while True:
         arduino_com.run_communication_to_arduino()
         print("Port is busy or arduino is disconnected.\nRestarting connection in 2s...")
@@ -343,7 +367,7 @@ def index():
             'lat': mdata['lat'],
             'lon': mdata['lon'],
             'name': mdata['popup_text'],
-            'color': mdata.get('color', 'blue')  # Include color in the data
+            'color': mdata.get('color', 'blue')
         }
 
     # Enhanced JavaScript with world bounds enforcement and search functionality
@@ -356,6 +380,7 @@ def index():
         map_html = map_html + context_menu_js
 
     return map_html
+
 
 @app.route('/api/pause_arduino', methods=['POST'])
 def api_pause_arduino():
@@ -387,6 +412,7 @@ def api_pause_arduino():
         print(f"Error setting Arduino pause state: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route('/api/cleanup_leds', methods=['POST'])
 def api_cleanup_leds():
     """
@@ -415,6 +441,7 @@ def api_cleanup_leds():
         print(f"Error sending LED cleanup signal: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # New endpoint to receive visible markers data
 @app.route('/visible_markers', methods=['POST'])
 def visible_markers_route():
@@ -439,11 +466,10 @@ def visible_markers_route():
 
 
 # API endpoint to get visible markers programmatically
-# Make sure you have the global variable declared at the top of your file
 current_visible_markers = []
 
 
-@app.route('/api/visible_markers', methods=['GET'])  # Changed to GET since you're retrieving
+@app.route('/api/visible_markers', methods=['GET'])
 def api_visible_markers():
     """
     API endpoint that returns currently stored visible markers.
@@ -459,7 +485,7 @@ def api_visible_markers():
             "status": "success",
             "visible_markers": visible_markers,
             "count": len(visible_markers),
-            "marker_names": marker_names  # Added this for consistency
+            "marker_names": marker_names
         })
 
     except Exception as e:
@@ -482,13 +508,12 @@ def api_memory_trigger():
             trigger_data = memory_view_trigger.copy()
             memory_view_trigger = None  # Clear after reading
 
-            # FIXED INDICES - marker at [4], RGB at [5,6,7]
             return jsonify({
                 "status": "success",
                 "has_trigger": True,
                 "trigger_data": trigger_data,
-                "marker_number": trigger_data[4],  # FIXED: was trigger_data[1]
-                "color_rgb": [trigger_data[5], trigger_data[6], trigger_data[7]]  # FIXED: was [2,3,4]
+                "marker_number": trigger_data[4],
+                "color_rgb": [trigger_data[5], trigger_data[6], trigger_data[7]]
             })
         else:
             return jsonify({
@@ -501,6 +526,7 @@ def api_memory_trigger():
         print(f"Error getting memory trigger via API: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route('/add_marker', methods=['POST'])
 def add_marker_route():
     try:
@@ -508,7 +534,7 @@ def add_marker_route():
         lat = data.get('lat')
         lon = data.get('lon')
         popup_text = data.get('popup_text', 'Marker')
-        color = data.get('color', 'blue')  # Get color from request
+        color = data.get('color', 'blue')
 
         print(f"Received marker request: lat={lat}, lon={lon}, text='{popup_text}', color='{color}'")
 
@@ -526,12 +552,12 @@ def add_marker_route():
             'lon': lon,
             'popup_text': popup_text,
             'tooltip_text': None,
-            'color': color  # Store the color
+            'color': color
         }
 
         print(f"Added marker: {popup_text} at ({lat:.4f}, {lon:.4f}) with color {color} and ID {marker_id}")
         print(f"Total markers in storage: {len(server_storage['markers'])}")
-        save_storage()
+        save_storage()  # This now triggers storage_changed_event
 
         return jsonify({
             "status": "success",
@@ -556,9 +582,8 @@ def add_memory_route():
 
         if marker_id in server_storage['markers']:
             server_storage['memories'][marker_id] = memory_text
-            # Keep the original color when adding memory
             print(f"Added memory for marker {marker_id}: {memory_text}")
-            save_storage()
+            save_storage()  # This now triggers storage_changed_event
             return jsonify({"status": "success", "message": "Memory added successfully"})
         else:
             return jsonify({"status": "error", "message": "Marker not found"}), 404
@@ -578,14 +603,14 @@ def get_memory_route(marker_id):
             # Get marker data to extract color
             marker_data = server_storage['markers'].get(marker_id)
             if marker_data:
-                marker_color = marker_data.get('color', '#0000ff')  # Default to blue
+                marker_color = marker_data.get('color', '#0000ff')
 
                 # Create and store the memory view trigger array
                 memory_view_trigger = create_memory_view_array(marker_id, marker_color)
 
                 marker_number = get_marker_number_from_id(marker_id)
                 print(f"Memory view triggered for marker {marker_number} (ID: {marker_id}) with color {marker_color}")
-                print(f"Trigger array: {memory_view_trigger[:10]}...")  # Print first 10 bytes for debug
+                print(f"Trigger array: {memory_view_trigger[:10]}...")
 
             return jsonify({"status": "success", "memory": memory})
         else:
@@ -614,7 +639,7 @@ def edit_marker_route():
         data = request.json
         marker_id = data.get('marker_id')
         popup_text = data.get('popup_text')
-        color = data.get('color')  # Get color from request
+        color = data.get('color')
 
         if not marker_id or not popup_text:
             return jsonify({"status": "error", "message": "Missing marker_id or popup_text"}), 400
@@ -628,7 +653,7 @@ def edit_marker_route():
                 print(f"Updated marker {marker_id} color to: {color}")
 
             print(f"Edited marker {marker_id}: new text '{popup_text}'")
-            save_storage()
+            save_storage()  # This now triggers storage_changed_event
             return jsonify({"status": "success", "message": "Marker updated successfully"})
         else:
             return jsonify({"status": "error", "message": "Marker not found"}), 404
@@ -654,7 +679,7 @@ def delete_marker_route():
             if marker_id in server_storage['memories']:
                 del server_storage['memories'][marker_id]
             print(f"Deleted marker: {marker_id} ({marker_data.get('popup_text', 'Unknown')})")
-            save_storage()
+            save_storage()  # This now triggers storage_changed_event
             return jsonify({"status": "success", "message": "Marker deleted successfully"})
         else:
             return jsonify({"status": "error", "message": "Marker not found"}), 404
@@ -665,8 +690,6 @@ def delete_marker_route():
 
 
 def run_flask_app():
-    # Disable reloader if running Flask in a separate thread
-    # as it can interfere with the main thread's execution.
     app.run(debug=True, port=5000, host='0.0.0.0', use_reloader=False)
 
 
@@ -676,9 +699,9 @@ if __name__ == '__main__':
     flask_thread = threading.Thread(target=run_flask_app)
     flask_thread.start()
     time.sleep(1)
+
     # After starting the Flask app, initiate the background task thread
     arduino_thread = threading.Thread(target=com_with_arduino)
     arduino_thread.start()
 
-    # You can add more code here to run in the main thread
     print("Main thread continues after launching Flask and background task.")
