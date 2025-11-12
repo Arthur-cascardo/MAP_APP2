@@ -151,7 +151,21 @@ class Arduino:
             return mask
         except (TypeError, ValueError):
             return 0
-
+    
+    def create_start_packet(self):
+    """
+    Create 50-byte packet for when the program starts.
+    Format: [FC][FD][FE][FF][46 padding bytes]
+    """
+    beginning_header = "FCFDFEFF" + '00' * 46  # 4 + 46 = 50 bytes
+    
+    try:
+        packet = bytes.fromhex(beginning_header)
+        return packet
+    except Exception as e:
+        self.logger.error(f"Error creating start packet: {e}")
+        return b'\x00' * 50
+    
     def create_regular_packet(self, marker_list):
         """
         Create 50-byte packet for regular LED data.
@@ -254,6 +268,12 @@ class Arduino:
 
         # Load colors once at start
         self.load_marker_colors('server_storage.json')
+        
+        beginning_packet = self.create_start_packet()
+            if beginning_packet:
+                self.send_packet(beginning_packet)
+                time.sleep(5)  # Wait for Arduino breathing effect to complete
+                self.logger.info("Initialization complete, starting normal operation")
 
         try:
             while True:
