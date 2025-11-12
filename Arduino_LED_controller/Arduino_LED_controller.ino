@@ -7,6 +7,12 @@
 #define PACKET_SIZE 50
 #define PACKET_TIMEOUT 2000
 
+// Beginning header
+#define START_HEADER_1 0xFC
+#define START_HEADER_2 0xFD  
+#define START_HEADER_3 0xFE
+#define START_HEADER_4 0xFF
+
 // Memory trigger header
 #define MEMORY_HEADER_1 0xFF
 #define MEMORY_HEADER_2 0xFE  
@@ -72,15 +78,84 @@ void loop() {
     }
     
     // Process packet
-    if (packet[0] == MEMORY_HEADER_1 && 
-        packet[1] == MEMORY_HEADER_2 && 
-        packet[2] == MEMORY_HEADER_3 && 
-        packet[3] == MEMORY_HEADER_4) {
-      handleMemoryTrigger(packet);
+    if (packet[0] == START_HEADER_1 && 
+        packet[1] == START_HEADER_2 && 
+        packet[2] == START_HEADER_3 && 
+        packet[3] == START_HEADER_4) {
+        handleBeginningPacket(packet);
+    } else if (packet[0] == MEMORY_HEADER_1 && 
+               packet[1] == MEMORY_HEADER_2 && 
+               packet[2] == MEMORY_HEADER_3 && 
+               packet[3] == MEMORY_HEADER_4) {
+        handleMemoryTrigger(packet);
     } else {
-      handleRegularCommand(packet);
+        handleRegularCommand(packet);
     }
   }
+}
+
+void handleBeginningPacket(uint8_t* packet) {
+  Serial.println("Beginning packet received - Starting RGB breathing effect");
+  
+  // Clear serial buffer
+  while (Serial.available() > 0) {
+    Serial.read();
+  }
+  
+  // Breathing parameters
+  int breatheCycles = 3;        // Number of complete RGB cycles
+  int breatheSteps = 100;       // Smoothness of breathing
+  int breatheSpeed = 15;        // Delay between steps (ms)
+  
+  // RGB breathing sequence
+  CRGB colors[3] = {
+    CRGB(255, 0, 0),   // Red
+    CRGB(0, 255, 0),   // Green
+    CRGB(0, 0, 255)    // Blue
+  };
+  
+  for (int cycle = 0; cycle < breatheCycles; cycle++) {
+    for (int colorIndex = 0; colorIndex < 3; colorIndex++) {
+      CRGB currentColor = colors[colorIndex];
+      
+      // Breathe in (fade up)
+      for (int step = 0; step <= breatheSteps; step++) {
+        uint8_t brightness = (step * 255) / breatheSteps;
+        for (int i = 0; i < NUM_LEDS; i++) {
+          leds[i] = currentColor;
+          leds[i].fadeToBlackBy(255 - brightness);
+        }
+        FastLED.show();
+        delay(breatheSpeed);
+      }
+      
+      // Brief hold at full brightness
+      delay(200);
+      
+      // Breathe out (fade down)
+      for (int step = breatheSteps; step >= 0; step--) {
+        uint8_t brightness = (step * 255) / breatheSteps;
+        for (int i = 0; i < NUM_LEDS; i++) {
+          leds[i] = currentColor;
+          leds[i].fadeToBlackBy(255 - brightness);
+        }
+        FastLED.show();
+        delay(breatheSpeed);
+      }
+      
+      // Brief pause between colors
+      delay(300);
+    }
+  }
+  
+  // Turn off all LEDs after breathing
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+    targetLeds[i] = CRGB::Black;
+  }
+  FastLED.show();
+  
+  Serial.println("RGB breathing complete - Ready for commands");
 }
 
 void handleRegularCommand(uint8_t* packet) {
