@@ -92,6 +92,15 @@ void loop() {
         handleRegularCommand(packet);
     }
   }
+  
+  // Turn off all LEDs after breathing
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+    targetLeds[i] = CRGB::Black;
+  }
+  FastLED.show();
+  
+  Serial.println("RGB breathing complete - Ready for commands");
 }
 
 void handleBeginningPacket(uint8_t* packet) {
