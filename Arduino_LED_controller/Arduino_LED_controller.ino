@@ -102,51 +102,7 @@ void handleBeginningPacket(uint8_t* packet) {
     Serial.read();
   }
   
-  // Breathing parameters
-  int breatheCycles = 3;        // Number of complete RGB cycles
-  int breatheSteps = 100;       // Smoothness of breathing
-  int breatheSpeed = 15;        // Delay between steps (ms)
-  
-  // RGB breathing sequence
-  CRGB colors[3] = {
-    CRGB(255, 0, 0),   // Red
-    CRGB(0, 255, 0),   // Green
-    CRGB(0, 0, 255)    // Blue
-  };
-  
-  for (int cycle = 0; cycle < breatheCycles; cycle++) {
-    for (int colorIndex = 0; colorIndex < 3; colorIndex++) {
-      CRGB currentColor = colors[colorIndex];
-      
-      // Breathe in (fade up)
-      for (int step = 0; step <= breatheSteps; step++) {
-        uint8_t brightness = (step * 255) / breatheSteps;
-        for (int i = 0; i < NUM_LEDS; i++) {
-          leds[i] = currentColor;
-          leds[i].fadeToBlackBy(255 - brightness);
-        }
-        FastLED.show();
-        delay(breatheSpeed);
-      }
-      
-      // Brief hold at full brightness
-      delay(200);
-      
-      // Breathe out (fade down)
-      for (int step = breatheSteps; step >= 0; step--) {
-        uint8_t brightness = (step * 255) / breatheSteps;
-        for (int i = 0; i < NUM_LEDS; i++) {
-          leds[i] = currentColor;
-          leds[i].fadeToBlackBy(255 - brightness);
-        }
-        FastLED.show();
-        delay(breatheSpeed);
-      }
-      
-      // Brief pause between colors
-      delay(300);
-    }
-  }
+  executeSpiralEffect(255, 255, 255, 200)
   
   // Turn off all LEDs after breathing
   for (int i = 0; i < NUM_LEDS; i++) {
@@ -245,7 +201,7 @@ void executeMemoryFunction(uint8_t markerNumber, uint8_t r, uint8_t g, uint8_t b
   int startLedIndex = markerNumber - 1;
   
   // Execute wave effect starting from this specific marker
-  executeSpreadingWaveFromMarker(startLedIndex, r, g, b, 800, 150, 8);
+  executeSpreadingWaveFromMarker(startLedIndex, r, g, b, 800, 50, 8);
   
   // After wave completes, keep ALL LEDs lit in the marker color
   for (int i = 0; i < NUM_LEDS; i++) {
@@ -255,6 +211,67 @@ void executeMemoryFunction(uint8_t markerNumber, uint8_t r, uint8_t g, uint8_t b
   FastLED.show();
   
   Serial.println("Memory effect complete - LEDs staying lit until resume");
+}
+
+void executeSpiralEffect(uint8_t r, uint8_t g, uint8_t b, int stepDelay) {
+  CRGB spiralColor = CRGB(r, g, b);
+  
+  // Turn off all LEDs first
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = CRGB::Black;
+  }
+  FastLED.show();
+  delay(100);
+  
+  // Spiral sequence for 4x4 matrix mapped to 16 LEDs (0-15)
+  // Matrix positions (row, col) mapped to LED indices:
+  // A11=0, A12=1, A13=2, A14=3
+  // A21=4, A22=5, A23=6, A24=7
+  // A31=8, A32=9, A33=10, A34=11
+  // A41=12, A42=13, A43=14, A44=15
+  
+  int spiralSequence[16] = {
+    0,  // A11
+    1,  // A12
+    2,  // A13
+    3,  // A14
+    7,  // A24
+    11, // A34
+    15, // A44
+    14, // A43
+    13, // A42
+    12, // A41
+    8,  // A31
+    4,  // A21
+    5,  // A22
+    6,  // A23
+    10, // A33
+    9   // A32
+  };
+  
+  int fadeSteps = 50;
+  
+  // Light up each LED in spiral sequence
+  for (int pos = 0; pos < 16; pos++) {
+    int ledIndex = spiralSequence[pos];
+    
+    // Fade in current LED
+    for (int fadeStep = 0; fadeStep <= fadeSteps; fadeStep++) {
+      leds[ledIndex] = blend(CRGB::Black, spiralColor, (fadeStep * 255) / fadeSteps);
+      FastLED.show();
+      delay(stepDelay / fadeSteps);
+    }
+    
+    // Ensure fully lit
+    leds[ledIndex] = spiralColor;
+    FastLED.show();
+    delay(stepDelay);
+  }
+  
+  // Hold all LEDs lit
+  delay(500);
+  
+  Serial.println("Spiral effect complete");
 }
 
 void executeSpreadingWaveFromMarker(int startIndex, uint8_t r, uint8_t g, uint8_t b, int holdTime, int waveSpeed, int maxDistance) {
@@ -272,7 +289,7 @@ void executeSpreadingWaveFromMarker(int startIndex, uint8_t r, uint8_t g, uint8_
   FastLED.show();
   delay(200);  // Pause to show starting position
   
-  int fadeSteps = 100;
+  int fadeSteps = 50;
   
   // Propagate wave outward in FOUR directions (cross/plus pattern)
   for (int distance = 1; distance <= maxDistance; distance++) {
@@ -321,80 +338,6 @@ void executeSpreadingWaveFromMarker(int startIndex, uint8_t r, uint8_t g, uint8_
     leds[i] = markerColor;
   }
   FastLED.show();
-  delay(holdTime);
-}
-
-void executeSpreadingWave(uint8_t r, uint8_t g, uint8_t b, int holdTime, int waveSpeed, int maxDistance) {
-  CRGB markerColor = CRGB(r, g, b);
-  
-  // Initialize all LEDs off
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = CRGB::Black;
-  }
-  FastLED.show();
-  delay(100);
-  
-  int fadeSteps = 100;
-  
-  // Propagate wave from each LED position outward
-  for (int distance = 0; distance <= maxDistance; distance++) {
-    // For each distance step, light up LEDs at that distance from ANY already-lit LED
-    bool newLEDs[NUM_LEDS];
-    for (int i = 0; i < NUM_LEDS; i++) {
-      newLEDs[i] = false;
-    }
-    
-    // Find which LEDs should light up at this distance
-    for (int center = 0; center < NUM_LEDS; center++) {
-      // On first step (distance 0), all LEDs are "centers"
-      // On subsequent steps, only already-lit LEDs are centers
-      if (distance == 0 || leds[center] != CRGB::Black) {
-        // Light up LEDs at current distance from this center
-        for (int dir = -1; dir <= 1; dir += 2) {  // -1 for left, +1 for right
-          int ledIndex = center + (dir * distance);
-          
-          // Circular wrapping
-          while (ledIndex < 0) ledIndex += NUM_LEDS;
-          while (ledIndex >= NUM_LEDS) ledIndex -= NUM_LEDS;
-          
-          // Mark this LED to be lit if not already lit
-          if (leds[ledIndex] == CRGB::Black) {
-            newLEDs[ledIndex] = true;
-          }
-        }
-      }
-    }
-    
-    // Fade in the new LEDs
-    for (int fadeStep = 0; fadeStep <= fadeSteps; fadeStep++) {
-      for (int i = 0; i < NUM_LEDS; i++) {
-        if (newLEDs[i]) {
-          leds[i] = blend(CRGB::Black, markerColor, (fadeStep * 255) / fadeSteps);
-        }
-      }
-      FastLED.show();
-      delay(waveSpeed / fadeSteps);
-    }
-    
-    // Ensure newly lit LEDs are fully on
-    for (int i = 0; i < NUM_LEDS; i++) {
-      if (newLEDs[i]) {
-        leds[i] = markerColor;
-      }
-    }
-    FastLED.show();
-    
-    // Pause between wave steps
-    delay(50);
-  }
-  
-  // Ensure all LEDs are fully lit
-  for (int i = 0; i < NUM_LEDS; i++) {
-    leds[i] = markerColor;
-  }
-  FastLED.show();
-  
-  // Hold all LEDs lit in marker color
   delay(holdTime);
 }
 
